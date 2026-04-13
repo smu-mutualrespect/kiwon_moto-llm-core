@@ -10,10 +10,9 @@ from werkzeug.wrappers import Request
 
 from moto.backends import get_service_from_url
 from moto.core.config import passthrough_service, passthrough_url
+from moto.core.llm_agents import call_claude_api, call_gpt_api
 from moto.core.llm_fallback import (
     build_llm_fallback_json,
-    call_claude_api,
-    call_gpt_api,
 )
 from moto.core.versions import is_responses_0_17_x
 

@@ -27,11 +27,8 @@ from moto import settings
 from moto.core.authorization import ActionAuthenticatorMixin
 from moto.core.common_types import TYPE_IF_NONE, TYPE_RESPONSE
 from moto.core.exceptions import ServiceException
-from moto.core.llm_fallback import (
-    build_llm_fallback_json,
-    call_claude_api,
-    call_gpt_api,
-)
+from moto.core.llm_agents import call_claude_api, call_gpt_api
+from moto.core.llm_fallback import build_llm_fallback_json
 from moto.core.model import OperationModel, ServiceModel
 from moto.core.parse import PROTOCOL_PARSERS, XFormedDict
 from moto.core.request import determine_request_protocol, normalize_request

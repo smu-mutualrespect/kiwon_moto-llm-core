@@ -10,10 +10,9 @@ from moto.core.base_backend import BackendDict
 from moto.core.common_types import TYPE_RESPONSE
 from moto.core.config import passthrough_service, passthrough_url, service_whitelisted
 from moto.core.exceptions import ServiceNotWhitelisted
+from moto.core.llm_agents import call_claude_api, call_gpt_api
 from moto.core.llm_fallback import (
     build_llm_fallback_json,
-    call_claude_api,
-    call_gpt_api,
 )
 from moto.core.utils import get_equivalent_url_in_aws_domain
 
