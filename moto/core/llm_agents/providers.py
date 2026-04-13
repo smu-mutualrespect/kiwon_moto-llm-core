@@ -10,8 +10,8 @@ import os
 from typing import Any, Optional
 # 함수 시그니처에 사용하는 타입 힌트를 가져온다.
 
-from urllib.request import Request, urlopen
-# 표준 라이브러리만으로 HTTP POST 요청을 보내기 위해 사용한다.
+import requests as _requests
+# urllib은 moto 서버 모드에서 타임아웃 문제가 있어 requests로 교체한다.
 
 
 def call_gpt_api(
@@ -98,7 +98,7 @@ def call_claude_api(
     payload = {
         # Anthropic API에 보낼 JSON 요청 body를 만든다.
         "model": model
-        or os.getenv("MOTO_LLM_ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
+        or os.getenv("MOTO_LLM_ANTHROPIC_MODEL", "claude-sonnet-4-6"),
         # 사용할 Claude 모델명을 정한다. 인자가 우선이고, 없으면 환경변수, 그것도 없으면 기본값을 쓴다.
         "max_tokens": 2000,
         # Claude가 생성할 최대 토큰 수를 정한다.
@@ -158,24 +158,15 @@ def _post_json(
 ) -> dict[str, Any]:
     # JSON POST 요청을 보내고 JSON 객체를 돌려주는 공통 헬퍼 함수다.
 
-    request = Request(
-        # urllib가 사용할 Request 객체를 만든다.
-        url=url,
-        # 요청 URL을 넣는다.
+    response = _requests.post(
+        url,
         headers=headers,
-        # 요청 헤더를 넣는다.
-        data=json.dumps(payload).encode("utf-8"),
-        # payload를 JSON 문자열로 만든 뒤 바이트로 인코딩해 body에 넣는다.
-        method="POST",
-        # HTTP 메서드를 POST로 지정한다.
+        json=payload,
+        timeout=timeout,
     )
+    response.raise_for_status()
 
-    with urlopen(request, timeout=timeout) as response:
-        # 지정한 timeout으로 실제 HTTP 요청을 보낸다.
-        raw = response.read().decode("utf-8")
-        # 응답 body 전체를 읽고 UTF-8 문자열로 디코딩한다.
-
-    parsed = json.loads(raw)
+    parsed = response.json()
     # 응답 문자열을 JSON으로 파싱한다.
 
     if not isinstance(parsed, dict):
