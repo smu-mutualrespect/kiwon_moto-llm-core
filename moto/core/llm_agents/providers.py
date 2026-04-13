@@ -1,17 +1,9 @@
 from __future__ import annotations
-# 미래형 타입 힌트를 문자열 평가 없이 사용할 수 있게 한다.
-
-import json
-# HTTP 요청/응답 body를 JSON으로 직렬화/역직렬화할 때 사용한다.
 
 import os
-# API 키와 기본 모델명을 환경변수에서 읽기 위해 사용한다.
-
 from typing import Any, Optional
-# 함수 시그니처에 사용하는 타입 힌트를 가져온다.
 
 import requests as _requests
-# urllib은 moto 서버 모드에서 타임아웃 문제가 있어 requests로 교체한다.
 
 
 def call_gpt_api(
@@ -97,8 +89,7 @@ def call_claude_api(
 
     payload = {
         # Anthropic API에 보낼 JSON 요청 body를 만든다.
-        "model": model
-        or os.getenv("MOTO_LLM_ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+        "model": model or os.getenv("MOTO_LLM_ANTHROPIC_MODEL", "claude-sonnet-4-6"),
         # 사용할 Claude 모델명을 정한다. 인자가 우선이고, 없으면 환경변수, 그것도 없으면 기본값을 쓴다.
         "max_tokens": 2000,
         # Claude가 생성할 최대 토큰 수를 정한다.
