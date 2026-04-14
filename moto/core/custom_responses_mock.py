@@ -1,4 +1,3 @@
-import os
 import types
 from http.client import responses as http_responses
 from io import BytesIO
@@ -10,7 +9,7 @@ from werkzeug.wrappers import Request
 
 from moto.backends import get_service_from_url
 from moto.core.config import passthrough_service, passthrough_url
-from moto.core.llm_agents import call_claude_api, call_gpt_api
+from moto.core.llm_agents import extract_session_id, get_or_create_agent
 from moto.core.llm_fallback import (
     build_llm_fallback_json,
 )
@@ -112,25 +111,22 @@ class CallbackResponse(responses.CallbackResponse):
 
 
 def not_implemented_callback(request: Any) -> TYPE_RESPONSE:
-    # requests mock catch-all에 걸린 요청에 대해 마지막 fallback을 시도한다.
-    prompt = f"""
-service={get_service_from_url(request.url)}
-action=None
-method={request.method}
-url={request.url}
-headers={dict(request.headers)}
-body={getattr(request, "body", None)}
-reason=responses mock catch-all fallback
-source=custom_responses_mock.not_implemented_callback
-"""
+    # requests mock catch-all 에 걸린 요청을 Agent 로 위임한다.
+    context = {
+        "service": get_service_from_url(request.url),
+        "action": None,
+        "method": request.method,
+        "url": request.url,
+        "headers": dict(request.headers),
+        "body": getattr(request, "body", None),
+        "reason": "responses mock catch-all fallback",
+        "source": "custom_responses_mock.not_implemented_callback",
+    }
     try:
-        if os.getenv("MOTO_LLM_PROVIDER", "").lower() == "claude":
-            fallback_text = call_claude_api(prompt)
-        else:
-            fallback_text = call_gpt_api(prompt)
-        return 200, {}, fallback_text
+        session_id = extract_session_id(request.headers)
+        agent = get_or_create_agent(session_id)
+        return 200, {}, agent.run(context)
     except Exception:
-        # fallback 호출이 실패하면 실험용 JSON 응답을 반환한다.
         fallback_headers, fallback_body = build_llm_fallback_json()
         return 200, fallback_headers, fallback_body
 

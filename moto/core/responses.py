@@ -27,7 +27,7 @@ from moto import settings
 from moto.core.authorization import ActionAuthenticatorMixin
 from moto.core.common_types import TYPE_IF_NONE, TYPE_RESPONSE
 from moto.core.exceptions import ServiceException
-from moto.core.llm_agents import call_claude_api, call_gpt_api
+from moto.core.llm_agents import extract_session_id, get_or_create_agent
 from moto.core.llm_fallback import build_llm_fallback_json
 from moto.core.model import OperationModel, ServiceModel
 from moto.core.parse import PROTOCOL_PARSERS, XFormedDict
@@ -609,24 +609,22 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                 response_headers["status"] = http_error.code  # type: ignore[assignment]
                 response = http_error.description, response_headers  # type: ignore[assignment]
             except NotImplementedError as not_implemented_error:
-                # 핸들러는 찾았지만 내부 구현이 비어 있을 때 LLM fallback을 시도한다.
-                prompt = f"""
-                service={self.service_name}
-                action={action}
-                url={self.uri}
-                headers={dict(self.headers)}
-                body={self.body}
-                reason={str(not_implemented_error)}
-                source=responses.call_action.method_not_implemented
-                """
+                # 핸들러는 찾았지만 내부 구현이 비어 있을 때 Agent 로 위임한다.
+                context = {
+                    "service": self.service_name,
+                    "action": action,
+                    "method": self.method,
+                    "url": self.uri,
+                    "headers": dict(self.headers),
+                    "body": self.body,
+                    "reason": str(not_implemented_error),
+                    "source": "responses.call_action.method_not_implemented",
+                }
                 try:
-                    if os.getenv("MOTO_LLM_PROVIDER", "").lower() == "claude":
-                        fallback_text = call_claude_api(prompt)
-                    else:
-                        fallback_text = call_gpt_api(prompt)
-                    return 200, headers, fallback_text
+                    session_id = extract_session_id(self.headers)
+                    agent = get_or_create_agent(session_id)
+                    return 200, headers, agent.run(context)
                 except Exception:
-                    # fallback 호출이 실패하면 실험용 JSON 응답을 반환한다.
                     fallback_headers, fallback_body = build_llm_fallback_json()
                     headers.update(fallback_headers)
                     return 200, headers, fallback_body
@@ -644,46 +642,42 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
             return status, headers, body
 
         if not action:
-            # action 자체를 읽지 못한 요청에 대해 마지막 fallback을 시도한다.
-            prompt = f"""
-                service={self.service_name}
-                action=None
-                url={self.uri}
-                headers={dict(self.headers)}
-                body={self.body}
-                reason=Could not determine action from request
-                source=responses.call_action.missing_action
-                """
+            # action 을 읽지 못한 요청을 Agent 로 위임한다.
+            context = {
+                "service": self.service_name,
+                "action": None,
+                "method": self.method,
+                "url": self.uri,
+                "headers": dict(self.headers),
+                "body": self.body,
+                "reason": "Could not determine action from request",
+                "source": "responses.call_action.missing_action",
+            }
             try:
-                if os.getenv("MOTO_LLM_PROVIDER", "").lower() == "claude":
-                    fallback_text = call_claude_api(prompt)
-                else:
-                    fallback_text = call_gpt_api(prompt)
-                return 200, headers, fallback_text
+                session_id = extract_session_id(self.headers)
+                agent = get_or_create_agent(session_id)
+                return 200, headers, agent.run(context)
             except Exception:
-                # fallback 호출이 실패하면 실험용 JSON 응답을 반환한다.
                 fallback_headers, fallback_body = build_llm_fallback_json()
                 headers.update(fallback_headers)
                 return 200, headers, fallback_body
 
+        # action 은 알지만 핸들러 메서드가 없을 때 Agent 로 위임한다.
+        context = {
+            "service": self.service_name,
+            "action": action,
+            "method": self.method,
+            "url": self.uri,
+            "headers": dict(self.headers),
+            "body": self.body,
+            "reason": "The action handler does not exist in moto",
+            "source": "responses.call_action.missing_handler",
+        }
         try:
-            # action은 알지만 핸들러 메서드가 없을 때 LLM fallback을 시도한다.
-            prompt = f"""
-                service={self.service_name}
-                action={action}
-                url={self.uri}
-                headers={dict(self.headers)}
-                body={self.body}
-                reason=The action handler does not exist in moto
-                source=responses.call_action.missing_handler
-                """
-            if os.getenv("MOTO_LLM_PROVIDER", "").lower() == "claude":
-                fallback_text = call_claude_api(prompt)
-            else:
-                fallback_text = call_gpt_api(prompt)
-            return 200, headers, fallback_text
+            session_id = extract_session_id(self.headers)
+            agent = get_or_create_agent(session_id)
+            return 200, headers, agent.run(context)
         except Exception:
-            # fallback 호출이 실패하면 실험용 JSON 응답을 반환한다.
             fallback_headers, fallback_body = build_llm_fallback_json()
             headers.update(fallback_headers)
             return 200, headers, fallback_body

@@ -1,3 +1,24 @@
+"""
+LLM Provider 추상화 레이어.
+
+새 LLM 추가 방법 (providers.py 만 수정하면 된다):
+  1. LLMProvider 를 상속하는 클래스를 작성한다.
+  2. 클래스 맨 위에 provider_name = "이름" 을 선언한다.
+  3. complete() 를 구현한다.
+  → MOTO_LLM_PROVIDER=이름 으로 즉시 사용 가능. agent.py 수정 불필요.
+
+예시:
+  class MyLLMProvider(LLMProvider):
+      provider_name = "myllm"
+      def complete(self, *, system, messages, timeout=30.0): ...
+
+각 Provider 는 LLMProvider 를 구현한다:
+  complete(*, system, messages, timeout) -> str
+
+하위 호환 함수:
+  call_claude_api(prompt) / call_gpt_api(prompt) 은 그대로 유지한다.
+"""
+
 from __future__ import annotations
 
 import os
@@ -5,73 +26,204 @@ from typing import Any, Optional
 
 import requests as _requests
 
+# ── Provider Protocol (인터페이스) ──────────────────────────────────────────
 
-def call_gpt_api(
-    prompt: str,
-    *,
-    model: Optional[str] = None,
-    timeout: float = 20.0,
-) -> str:
-    # OpenAI Responses API를 호출해서 텍스트 응답을 받아오는 함수다.
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    # OpenAI API 키를 환경변수에서 읽는다.
+class LLMProvider:
+    """
+    모든 LLM 제공자가 상속해야 하는 기본 클래스.
 
-    if not api_key:
-        # API 키가 없으면 바로 예외를 발생시킨다.
-        raise ValueError("OPENAI_API_KEY is not set")
+    새 Provider 추가 규칙:
+      - provider_name 클래스 변수를 선언한다. (MOTO_LLM_PROVIDER 값과 일치)
+      - complete() 를 구현한다.
+      - 이 파일에 클래스를 추가하기만 하면 자동으로 등록된다.
+    """
 
-    payload = {
-        # OpenAI API에 보낼 JSON 요청 body를 만든다.
-        "model": model
-        if model is not None
-        else os.getenv("MOTO_LLM_OPENAI_MODEL", "gpt-5-mini"),
-        # 호출에 사용할 모델명을 정한다. 인자가 없으면 환경변수, 그것도 없으면 기본값을 쓴다.
-        "input": [
-            # Responses API의 공식 message 배열 형태로 입력을 보낸다.
+    provider_name: str = ""  # 서브클래스에서 반드시 선언
+
+    def complete(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, str]],
+        timeout: float = 30.0,
+    ) -> str:
+        """
+        system   : 시스템 프롬프트 (모델에게 역할·규칙을 지시)
+        messages : [{"role": "user"|"assistant", "content": str}, ...]
+                   멀티턴 대화 이력을 포함한다.
+        반환값   : 모델이 생성한 텍스트
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__}.complete() 를 구현해야 합니다."
+        )
+
+
+# ── Claude (Anthropic) ──────────────────────────────────────────────────────
+
+
+class ClaudeProvider(LLMProvider):
+    """Anthropic Claude Messages API 제공자."""
+
+    provider_name = "claude"
+
+    def __init__(self, model: Optional[str] = None) -> None:
+        self._model = model or os.getenv(
+            "MOTO_LLM_ANTHROPIC_MODEL", "claude-sonnet-4-6"
+        )
+
+    def complete(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, str]],
+        timeout: float = 30.0,
+    ) -> str:
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.")
+
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": 2000,
+            "system": system,
+            "messages": messages,
+        }
+
+        response = _post_json(
+            url="https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            payload=payload,
+            timeout=timeout,
+        )
+
+        parts = [
+            item["text"]
+            for item in response.get("content", [])
+            if item.get("type") == "text" and item.get("text")
+        ]
+        return "\n".join(parts).strip()
+
+
+# ── GPT (OpenAI) ──────────────────────────────────────────────────────────
+
+
+class GPTProvider(LLMProvider):
+    """OpenAI Chat Completions API 제공자."""
+
+    provider_name = "gpt"
+
+    def __init__(self, model: Optional[str] = None) -> None:
+        self._model = model or os.getenv("MOTO_LLM_OPENAI_MODEL", "gpt-4o")
+
+    def complete(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, str]],
+        timeout: float = 30.0,
+    ) -> str:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY 환경변수가 설정되지 않았습니다.")
+
+        # OpenAI Chat Completions: system 메시지를 맨 앞에 추가한다.
+        openai_messages: list[dict[str, str]] = [
+            {"role": "system", "content": system}
+        ] + list(messages)
+
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": openai_messages,
+        }
+
+        response = _post_json(
+            url="https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            payload=payload,
+            timeout=timeout,
+        )
+
+        choices = response.get("choices", [])
+        if choices:
+            return choices[0].get("message", {}).get("content", "").strip()
+        return ""
+
+
+# ── Gemini (Google) ──────────────────────────────────────────────────────
+
+
+class GeminiProvider(LLMProvider):
+    """
+    Google Gemini API 제공자.
+
+    환경변수:
+      GEMINI_API_KEY        : Google AI Studio 에서 발급한 키
+      MOTO_LLM_GEMINI_MODEL : 사용할 모델 (기본: gemini-1.5-pro)
+    """
+
+    provider_name = "gemini"
+
+    def __init__(self, model: Optional[str] = None) -> None:
+        self._model = model or os.getenv("MOTO_LLM_GEMINI_MODEL", "gemini-1.5-pro")
+
+    def complete(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, str]],
+        timeout: float = 30.0,
+    ) -> str:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
+
+        # Gemini API: user/assistant → user/model 으로 role 매핑
+        gemini_contents = [
             {
-                "role": "user",
-                # 이 메시지가 사용자 입력이라는 뜻이다.
-                "content": prompt,
-                # 실제 프롬프트 문자열을 담는다.
+                "role": "user" if msg["role"] == "user" else "model",
+                "parts": [{"text": msg["content"]}],
             }
-        ],
-    }
+            for msg in messages
+        ]
 
-    response = _post_json(
-        # 공통 POST 함수로 OpenAI Responses API를 호출한다.
-        url="https://api.openai.com/v1/responses",
-        # OpenAI Responses API 엔드포인트다.
-        headers={
-            # OpenAI 요청에 필요한 HTTP 헤더를 만든다.
-            "Authorization": f"Bearer {api_key}",
-            # Bearer 토큰 방식으로 API 키를 전달한다.
-            "Content-Type": "application/json",
-            # 요청 body가 JSON이라는 것을 명시한다.
-        },
-        payload=payload,
-        # 위에서 만든 요청 body를 전달한다.
-        timeout=timeout,
-        # 네트워크 대기 시간을 초 단위로 전달한다.
-    )
+        payload: dict[str, Any] = {
+            "system_instruction": {"parts": [{"text": system}]},
+            "contents": gemini_contents,
+            "generationConfig": {"maxOutputTokens": 2000},
+        }
 
-    parts: list[str] = []
-    # 응답 안의 텍스트 조각들을 모을 리스트를 만든다.
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models"
+            f"/{self._model}:generateContent?key={api_key}"
+        )
 
-    for item in response.get("output", []):
-        # OpenAI 응답의 output 배열을 순회한다.
-        for content in item.get("content", []):
-            # 각 output 항목 안의 content 배열을 순회한다.
-            if content.get("type") == "output_text":
-                # 텍스트 출력 항목만 골라낸다.
-                text = content.get("text")
-                # 실제 생성된 텍스트를 읽는다.
-                if text:
-                    # 비어 있지 않은 텍스트만 추가한다.
-                    parts.append(text)
+        response = _post_json(
+            url=url,
+            headers={"Content-Type": "application/json"},
+            payload=payload,
+            timeout=timeout,
+        )
 
-    return "\n".join(parts).strip()
-    # 여러 텍스트 조각을 하나의 문자열로 합쳐 최종 응답으로 돌려준다.
+        candidates = response.get("candidates", [])
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            texts = [p["text"] for p in parts if "text" in p]
+            return "\n".join(texts).strip()
+        return ""
+
+
+# ── 하위 호환 함수 ─────────────────────────────────────────────────────────
+# 기존 코드(botocore_stubber, custom_responses_mock, responses)가
+# call_claude_api / call_gpt_api 를 직접 import 하므로 그대로 유지한다.
+# 새 코드는 Provider 클래스를 직접 사용할 것.
 
 
 def call_claude_api(
@@ -80,68 +232,29 @@ def call_claude_api(
     model: Optional[str] = None,
     timeout: float = 20.0,
 ) -> str:
-    # Anthropic Messages API를 호출해서 텍스트 응답을 받아오는 함수다.
-
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    # Anthropic API 키를 환경변수에서 읽는다.
-
-    if not api_key:
-        # API 키가 없으면 바로 예외를 발생시킨다.
-        raise ValueError("ANTHROPIC_API_KEY is not set")
-
-    payload = {
-        # Anthropic API에 보낼 JSON 요청 body를 만든다.
-        "model": model
-        if model is not None
-        else os.getenv("MOTO_LLM_ANTHROPIC_MODEL", "claude-sonnet-4-6"),
-        # 사용할 Claude 모델명을 정한다. 인자가 우선이고, 없으면 환경변수, 그것도 없으면 기본값을 쓴다.
-        "max_tokens": 2000,
-        # Claude가 생성할 최대 토큰 수를 정한다.
-        "messages": [
-            # Anthropic Messages API의 공식 messages 배열을 구성한다.
-            {
-                "role": "user",
-                # 사용자 메시지라는 뜻이다.
-                "content": prompt,
-                # 실제 프롬프트 문자열을 넣는다.
-            }
-        ],
-    }
-
-    response = _post_json(
-        # 공통 POST 함수로 Anthropic Messages API를 호출한다.
-        url="https://api.anthropic.com/v1/messages",
-        # Anthropic Messages API 엔드포인트다.
-        headers={
-            # Anthropic 요청에 필요한 HTTP 헤더를 만든다.
-            "x-api-key": api_key,
-            # Anthropic 전용 API 키 헤더다.
-            "anthropic-version": "2023-06-01",
-            # 사용할 API 버전을 명시한다.
-            "content-type": "application/json",
-            # 요청 body가 JSON이라는 것을 명시한다.
-        },
-        payload=payload,
-        # 위에서 만든 요청 body를 전달한다.
+    """단일 턴 Claude 호출 (하위 호환용). 새 코드에서는 ClaudeProvider 를 사용하세요."""
+    return ClaudeProvider(model=model).complete(
+        system="You are a helpful assistant.",
+        messages=[{"role": "user", "content": prompt}],
         timeout=timeout,
-        # 네트워크 대기 시간을 초 단위로 전달한다.
     )
 
-    parts: list[str] = []
-    # 응답 안의 텍스트 조각들을 모을 리스트를 만든다.
 
-    for item in response.get("content", []):
-        # Anthropic 응답의 content 배열을 순회한다.
-        if item.get("type") == "text":
-            # 텍스트 타입 블록만 골라낸다.
-            text = item.get("text")
-            # 실제 생성된 텍스트를 읽는다.
-            if text:
-                # 비어 있지 않은 텍스트만 추가한다.
-                parts.append(text)
+def call_gpt_api(
+    prompt: str,
+    *,
+    model: Optional[str] = None,
+    timeout: float = 20.0,
+) -> str:
+    """단일 턴 GPT 호출 (하위 호환용). 새 코드에서는 GPTProvider 를 사용하세요."""
+    return GPTProvider(model=model).complete(
+        system="You are a helpful assistant.",
+        messages=[{"role": "user", "content": prompt}],
+        timeout=timeout,
+    )
 
-    return "\n".join(parts).strip()
-    # 여러 텍스트 조각을 하나의 문자열로 합쳐 최종 응답으로 돌려준다.
+
+# ── 공통 HTTP 헬퍼 ─────────────────────────────────────────────────────────
 
 
 def _post_json(
@@ -151,22 +264,10 @@ def _post_json(
     payload: dict[str, Any],
     timeout: float,
 ) -> dict[str, Any]:
-    # JSON POST 요청을 보내고 JSON 객체를 돌려주는 공통 헬퍼 함수다.
-
-    response = _requests.post(
-        url,
-        headers=headers,
-        json=payload,
-        timeout=timeout,
-    )
+    """JSON POST 요청을 보내고 파싱된 JSON 객체를 반환하는 공통 헬퍼."""
+    response = _requests.post(url, headers=headers, json=payload, timeout=timeout)
     response.raise_for_status()
-
     parsed = response.json()
-    # 응답 문자열을 JSON으로 파싱한다.
-
     if not isinstance(parsed, dict):
-        # 최상위 JSON이 객체가 아니면 예상한 형식이 아니라고 본다.
-        raise ValueError("Expected JSON object response")
-
+        raise ValueError("응답이 JSON 객체가 아닙니다.")
     return parsed
-    # 파싱된 JSON 객체를 호출자에게 돌려준다.

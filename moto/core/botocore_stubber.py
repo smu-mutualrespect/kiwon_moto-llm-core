@@ -1,4 +1,3 @@
-import os
 import re
 from io import BytesIO
 from typing import Any, Optional, Union
@@ -10,7 +9,7 @@ from moto.core.base_backend import BackendDict
 from moto.core.common_types import TYPE_RESPONSE
 from moto.core.config import passthrough_service, passthrough_url, service_whitelisted
 from moto.core.exceptions import ServiceNotWhitelisted
-from moto.core.llm_agents import call_claude_api, call_gpt_api
+from moto.core.llm_agents import extract_session_id, get_or_create_agent
 from moto.core.llm_fallback import (
     build_llm_fallback_json,
 )
@@ -101,24 +100,22 @@ class BotocoreStubber:
                         return status, headers, body
 
         if re.compile(r"https?://.+\.amazonaws.com/.*").match(clean_url):
-            # AWS URL은 맞지만 moto backend URL 매칭이 없을 때 fallback을 시도한다.
-            prompt = f"""
-service=None
-action=None
-url={request.url}
-headers={dict(request.headers)}
-body={getattr(request, "body", None)}
-reason=No moto backend matched this AWS URL
-source=botocore_stubber.process_request.no_backend_match
-"""
+            # AWS URL은 맞지만 moto backend URL 매칭이 없을 때 Agent 로 위임한다.
+            context = {
+                "service": None,
+                "action": None,
+                "method": getattr(request, "method", None),
+                "url": request.url,
+                "headers": dict(request.headers),
+                "body": getattr(request, "body", None),
+                "reason": "No moto backend matched this AWS URL",
+                "source": "botocore_stubber.process_request.no_backend_match",
+            }
             try:
-                if os.getenv("MOTO_LLM_PROVIDER", "").lower() == "claude":
-                    fallback_text = call_claude_api(prompt)
-                else:
-                    fallback_text = call_gpt_api(prompt)
-                return 200, {}, fallback_text
+                session_id = extract_session_id(request.headers)
+                agent = get_or_create_agent(session_id)
+                return 200, {}, agent.run(context)
             except Exception:
-                # fallback 호출이 실패하면 실험용 JSON 응답을 반환한다.
                 fallback_headers, fallback_body = build_llm_fallback_json()
                 return 200, fallback_headers, fallback_body
 
