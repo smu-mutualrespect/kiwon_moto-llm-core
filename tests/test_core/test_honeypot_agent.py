@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 import xml.etree.ElementTree as ET
+from typing import Any
 
 import boto3
 import pytest
@@ -27,7 +28,7 @@ from moto.core.llm_agents.agent import HoneypotAgent, get_or_create_agent
 # ── 헬퍼 ──────────────────────────────────────────────────────────────────
 
 
-def _make_s3_context(action: str, url: str, body: str = "") -> dict:
+def _make_s3_context(action: str, url: str, body: str = "") -> dict[str, Any]:
     return {
         "service": "s3",
         "action": action,
@@ -40,7 +41,7 @@ def _make_s3_context(action: str, url: str, body: str = "") -> dict:
     }
 
 
-def _make_ec2_context(action: str, body: str = "") -> dict:
+def _make_ec2_context(action: str, body: str = "") -> dict[str, Any]:
     return {
         "service": "ec2",
         "action": action,
@@ -53,7 +54,7 @@ def _make_ec2_context(action: str, body: str = "") -> dict:
     }
 
 
-def _make_iam_context(action: str, body: str = "") -> dict:
+def _make_iam_context(action: str, body: str = "") -> dict[str, Any]:
     return {
         "service": "iam",
         "action": action,
@@ -66,7 +67,7 @@ def _make_iam_context(action: str, body: str = "") -> dict:
     }
 
 
-def _make_sts_context(action: str) -> dict:
+def _make_sts_context(action: str) -> dict[str, Any]:
     return {
         "service": "sts",
         "action": action,
@@ -102,14 +103,14 @@ class TestMotoHandledOperations:
     """moto 가 자체 처리하는 API 는 boto3 가 정상 파싱할 수 있어야 한다."""
 
     @mock_aws
-    def test_s3_list_buckets_empty(self):
+    def test_s3_list_buckets_empty(self) -> None:
         client = boto3.client("s3", region_name="us-east-1")
         resp = client.list_buckets()
         assert resp["ResponseMetadata"]["HTTPStatusCode"] == 200
         assert "Buckets" in resp
 
     @mock_aws
-    def test_s3_create_and_list(self):
+    def test_s3_create_and_list(self) -> None:
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket="test-honeypot-bucket")
         resp = client.list_buckets()
@@ -117,21 +118,21 @@ class TestMotoHandledOperations:
         assert "test-honeypot-bucket" in names
 
     @mock_aws
-    def test_sts_get_caller_identity(self):
+    def test_sts_get_caller_identity(self) -> None:
         client = boto3.client("sts", region_name="us-east-1")
         resp = client.get_caller_identity()
         assert "Account" in resp
         assert "Arn" in resp
 
     @mock_aws
-    def test_ec2_describe_regions(self):
+    def test_ec2_describe_regions(self) -> None:
         client = boto3.client("ec2", region_name="us-east-1")
         resp = client.describe_regions()
         regions = [r["RegionName"] for r in resp["Regions"]]
         assert "us-east-1" in regions
 
     @mock_aws
-    def test_iam_list_users_empty(self):
+    def test_iam_list_users_empty(self) -> None:
         client = boto3.client("iam", region_name="us-east-1")
         resp = client.list_users()
         assert "Users" in resp
@@ -143,12 +144,12 @@ class TestMotoHandledOperations:
 class TestAgentHandledOperations:
     """Agent 응답이 AWS 와이어 포맷(XML/JSON)과 일치해야 한다."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         self.agent = HoneypotAgent()
 
     # ── S3 ────────────────────────────────────────────────────────────────
 
-    def test_s3_list_buckets_xml_format(self):
+    def test_s3_list_buckets_xml_format(self) -> None:
         """S3 ListBuckets 응답이 파싱 가능한 XML 이어야 한다."""
         ctx = _make_s3_context("ListBuckets", "https://s3.amazonaws.com/")
         reply = self.agent.run(ctx)
@@ -160,7 +161,7 @@ class TestAgentHandledOperations:
             f"예상과 다른 루트 태그: {tag}\n{reply}"
         )
 
-    def test_s3_list_objects_xml_format(self):
+    def test_s3_list_objects_xml_format(self) -> None:
         """S3 ListObjectsV2 응답이 유효한 XML 이어야 한다."""
         ctx = _make_s3_context(
             "ListObjectsV2",
@@ -169,7 +170,7 @@ class TestAgentHandledOperations:
         reply = self.agent.run(ctx)
         assert _is_valid_xml(reply), f"S3 응답이 유효한 XML 이 아님:\n{reply}"
 
-    def test_s3_get_bucket_location(self):
+    def test_s3_get_bucket_location(self) -> None:
         """S3 GetBucketLocation 응답이 유효한 XML 이어야 한다."""
         ctx = _make_s3_context(
             "GetBucketLocation",
@@ -180,7 +181,7 @@ class TestAgentHandledOperations:
 
     # ── EC2 ───────────────────────────────────────────────────────────────
 
-    def test_ec2_describe_instances_xml_format(self):
+    def test_ec2_describe_instances_xml_format(self) -> None:
         """EC2 DescribeInstances 응답이 XML 이고 reservationSet 을 포함해야 한다."""
         ctx = _make_ec2_context(
             "DescribeInstances",
@@ -193,7 +194,7 @@ class TestAgentHandledOperations:
             r"(?i)(reservationSet|instancesSet|DescribeInstancesResponse)", reply
         ), f"EC2 DescribeInstances 응답에 예상 필드 없음:\n{reply}"
 
-    def test_ec2_describe_security_groups(self):
+    def test_ec2_describe_security_groups(self) -> None:
         """EC2 DescribeSecurityGroups 응답이 XML 이고 sg- ID 를 포함해야 한다."""
         ctx = _make_ec2_context(
             "DescribeSecurityGroups",
@@ -206,7 +207,7 @@ class TestAgentHandledOperations:
 
     # ── IAM ───────────────────────────────────────────────────────────────
 
-    def test_iam_list_roles_json_format(self):
+    def test_iam_list_roles_json_format(self) -> None:
         """IAM ListRoles 응답이 JSON 또는 XML 형식이어야 한다."""
         ctx = _make_iam_context(
             "ListRoles",
@@ -222,7 +223,7 @@ class TestAgentHandledOperations:
         else:
             assert _is_valid_xml(reply), f"IAM 응답이 XML 도 JSON 도 아님:\n{reply}"
 
-    def test_iam_get_user(self):
+    def test_iam_get_user(self) -> None:
         """IAM GetUser 응답이 비어 있지 않아야 한다."""
         ctx = _make_iam_context(
             "GetUser",
@@ -233,7 +234,7 @@ class TestAgentHandledOperations:
 
     # ── STS ───────────────────────────────────────────────────────────────
 
-    def test_sts_get_caller_identity_arn(self):
+    def test_sts_get_caller_identity_arn(self) -> None:
         """STS GetCallerIdentity 응답에 ARN 과 AccountId 가 있어야 한다."""
         ctx = _make_sts_context("GetCallerIdentity")
         reply = self.agent.run(ctx)
@@ -250,7 +251,7 @@ class TestAgentHandledOperations:
 class TestSessionConsistency:
     """같은 세션에서 생성된 리소스 ID 가 후속 요청에서도 동일해야 한다."""
 
-    def test_bucket_name_consistent_across_turns(self):
+    def test_bucket_name_consistent_across_turns(self) -> None:
         """첫 응답에서 나온 버킷 이름이 두 번째 응답에서도 동일해야 한다."""
         agent = get_or_create_agent("test-session-consistency")
 
@@ -271,7 +272,7 @@ class TestSessionConsistency:
 
         assert _is_valid_xml(reply2), f"Turn 2 응답이 유효한 XML 이 아님:\n{reply2}"
 
-    def test_instance_id_consistent_across_turns(self):
+    def test_instance_id_consistent_across_turns(self) -> None:
         """EC2 인스턴스 ID 가 연속 요청에서 동일하게 유지되어야 한다."""
         agent = get_or_create_agent("test-session-ec2")
 
@@ -311,10 +312,10 @@ class TestResourceIdFormats:
         "account_id": r"\b\d{12}\b",
     }
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         self.agent = HoneypotAgent()
 
-    def test_ec2_resource_ids_match_aws_format(self):
+    def test_ec2_resource_ids_match_aws_format(self) -> None:
         """EC2 응답에 AWS 형식의 리소스 ID 가 포함되어야 한다."""
         ctx = _make_ec2_context("DescribeInstances", "Action=DescribeInstances")
         reply = self.agent.run(ctx)
@@ -326,7 +327,7 @@ class TestResourceIdFormats:
         }
         assert found, f"AWS 형식의 리소스 ID 가 전혀 없음:\n{reply}"
 
-    def test_sts_account_id_is_12_digits(self):
+    def test_sts_account_id_is_12_digits(self) -> None:
         """STS 응답의 Account ID 는 정확히 12자리 숫자여야 한다."""
         ctx = _make_sts_context("GetCallerIdentity")
         reply = self.agent.run(ctx)
@@ -334,7 +335,7 @@ class TestResourceIdFormats:
         account_ids = re.findall(r"\b(\d{12})\b", reply)
         assert account_ids, f"12자리 Account ID 가 없음:\n{reply}"
 
-    def test_arn_format_correct(self):
+    def test_arn_format_correct(self) -> None:
         """응답에 포함된 ARN 이 arn:aws:service:region:account:resource 형식이어야 한다."""
         ctx = _make_iam_context("GetUser", "Action=GetUser")
         reply = self.agent.run(ctx)
@@ -353,11 +354,11 @@ class TestResourceIdFormats:
 class TestMultiTurnMemory:
     """이전 대화에서 언급된 정보를 다음 턴에서 기억해야 한다."""
 
-    def test_remembers_created_bucket(self):
+    def test_remembers_created_bucket(self) -> None:
         """CreateBucket 후 ListBuckets 에서 해당 버킷이 보여야 한다."""
         agent = get_or_create_agent("test-session-memory")
 
-        ctx_create = {
+        ctx_create: dict[str, Any] = {
             "service": "s3",
             "action": "CreateBucket",
             "method": "PUT",
