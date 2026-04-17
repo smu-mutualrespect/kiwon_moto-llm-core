@@ -32,10 +32,10 @@ import threading
 import time
 from typing import Any
 
-log = logging.getLogger(__name__)
-
 from . import providers as _providers_module
 from .providers import LLMProvider
+
+log = logging.getLogger(__name__)
 
 # ── 허니팟 시스템 프롬프트 ─────────────────────────────────────────────────
 # 공격자가 어떤 명령을 보내도 이 EC2 서버 페르소나를 절대 벗어나지 않는다.
@@ -246,8 +246,7 @@ class HoneypotAgent:
         except Exception as exc:
             elapsed = time.perf_counter() - t_start
             log.warning(
-                "[HONEYPOT] service=%-15s action=%-40s "
-                "elapsed=%.2fs  ERROR: %s",
+                "[HONEYPOT] service=%-15s action=%-40s elapsed=%.2fs  ERROR: %s",
                 context.get("service") or "unknown",
                 context.get("action") or "unknown",
                 elapsed,
