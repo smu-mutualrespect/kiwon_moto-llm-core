@@ -41,6 +41,11 @@ class LLMProvider:
 
     provider_name: str = ""  # 서브클래스에서 반드시 선언
 
+    def __init__(self) -> None:
+        # complete() 호출 후 토큰 사용량을 저장한다.
+        # {"input_tokens": int, "output_tokens": int}
+        self.last_usage: dict[str, int] = {}
+
     def complete(
         self,
         *,
@@ -68,6 +73,7 @@ class ClaudeProvider(LLMProvider):
     provider_name = "claude"
 
     def __init__(self, model: Optional[str] = None) -> None:
+        super().__init__()
         self._model = model or os.getenv(
             "MOTO_LLM_ANTHROPIC_MODEL", "claude-sonnet-4-6"
         )
@@ -101,6 +107,12 @@ class ClaudeProvider(LLMProvider):
             timeout=timeout,
         )
 
+        usage = response.get("usage", {})
+        self.last_usage = {
+            "input_tokens": usage.get("input_tokens", 0),
+            "output_tokens": usage.get("output_tokens", 0),
+        }
+
         parts = [
             item["text"]
             for item in response.get("content", [])
@@ -118,6 +130,7 @@ class GPTProvider(LLMProvider):
     provider_name = "gpt"
 
     def __init__(self, model: Optional[str] = None) -> None:
+        super().__init__()
         self._model = model or os.getenv("MOTO_LLM_OPENAI_MODEL", "gpt-4o")
 
     def complete(
@@ -151,6 +164,12 @@ class GPTProvider(LLMProvider):
             timeout=timeout,
         )
 
+        usage = response.get("usage", {})
+        self.last_usage = {
+            "input_tokens": usage.get("prompt_tokens", 0),
+            "output_tokens": usage.get("completion_tokens", 0),
+        }
+
         choices = response.get("choices", [])
         if choices:
             return choices[0].get("message", {}).get("content", "").strip()
@@ -172,6 +191,7 @@ class GeminiProvider(LLMProvider):
     provider_name = "gemini"
 
     def __init__(self, model: Optional[str] = None) -> None:
+        super().__init__()
         self._model = model or os.getenv("MOTO_LLM_GEMINI_MODEL", "gemini-1.5-pro")
 
     def complete(
@@ -211,6 +231,12 @@ class GeminiProvider(LLMProvider):
             payload=payload,
             timeout=timeout,
         )
+
+        usage = response.get("usageMetadata", {})
+        self.last_usage = {
+            "input_tokens": usage.get("promptTokenCount", 0),
+            "output_tokens": usage.get("candidatesTokenCount", 0),
+        }
 
         candidates = response.get("candidates", [])
         if candidates:

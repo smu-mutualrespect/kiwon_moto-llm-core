@@ -26,9 +26,13 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import os
 import threading
+import time
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 from . import providers as _providers_module
 from .providers import LLMProvider
@@ -221,13 +225,34 @@ class HoneypotAgent:
         user_message = self._build_user_message(context)
         self._history.append({"role": "user", "content": user_message})
 
+        t_start = time.perf_counter()
         try:
             reply = self._provider.complete(
                 system=_SYSTEM_PROMPT,
                 messages=list(self._history),  # 복사본 전달
             )
             reply = _strip_markdown(reply)
+            elapsed = time.perf_counter() - t_start
+            usage = self._provider.last_usage
+            log.warning(
+                "[HONEYPOT] service=%-15s action=%-40s "
+                "elapsed=%.2fs  in=%d out=%d tokens",
+                context.get("service") or "unknown",
+                context.get("action") or "unknown",
+                elapsed,
+                usage.get("input_tokens", 0),
+                usage.get("output_tokens", 0),
+            )
         except Exception as exc:
+            elapsed = time.perf_counter() - t_start
+            log.warning(
+                "[HONEYPOT] service=%-15s action=%-40s "
+                "elapsed=%.2fs  ERROR: %s",
+                context.get("service") or "unknown",
+                context.get("action") or "unknown",
+                elapsed,
+                exc,
+            )
             reply = _make_error_response(context, exc)
 
         self._history.append({"role": "assistant", "content": reply})
