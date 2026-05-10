@@ -131,10 +131,9 @@ def parse_agent_output(raw_text: str) -> AgentOutput:
         if isinstance(parsed.get("environment_delta"), dict)
         else {}
     )
-    tool_requests = (
-        parsed.get("tool_requests")
-        if isinstance(parsed.get("tool_requests"), list)
-        else []
+    _raw_tool_requests = parsed.get("tool_requests")
+    tool_requests: list[Any] = (
+        _raw_tool_requests if isinstance(_raw_tool_requests, list) else []
     )
     tool_requests = [item for item in tool_requests if isinstance(item, dict)][:3]
 
@@ -145,8 +144,8 @@ def parse_agent_output(raw_text: str) -> AgentOutput:
         risk_delta=risk_delta,
         reason_tags=reason_tags,
         error_mode=error_mode,
-        field_values=field_values,
-        environment_delta=environment_delta,
+        field_values=field_values,  # type: ignore[arg-type]
+        environment_delta=environment_delta,  # type: ignore[arg-type]
         tool_requests=tool_requests,
     )
 

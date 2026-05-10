@@ -8,7 +8,7 @@ from flask.testing import FlaskClient
 from werkzeug.routing import BaseConverter
 
 
-class RegexConverter(BaseConverter):
+class RegexConverter(BaseConverter):  # type: ignore[misc]
     # http://werkzeug.pocoo.org/docs/routing/#custom-converters
 
     part_isolating = False
@@ -18,7 +18,7 @@ class RegexConverter(BaseConverter):
         self.regex = items[0]
 
 
-class AWSTestHelper(FlaskClient):
+class AWSTestHelper(FlaskClient):  # type: ignore[misc]
     def action_data(self, action_name: str, **kwargs: Any) -> str:
         """
         Method calls resource with action_name and returns data of response.

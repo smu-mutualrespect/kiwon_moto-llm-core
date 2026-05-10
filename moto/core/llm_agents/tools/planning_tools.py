@@ -68,7 +68,7 @@ def _coerce_plan(
     return stabilize_response_plan(
         canonical,
         decision,
-        ResponsePlan(mode, posture, entity_hints, field_hints, omit_fields),
+        ResponsePlan(mode, posture, entity_hints, field_hints, omit_fields),  # type: ignore[arg-type]
     )
 
 

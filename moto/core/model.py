@@ -34,7 +34,7 @@ from botocore.model import StructureShape as BotocoreStructureShape
 from botocore.utils import CachedProperty, instance_cache
 
 
-class Shape(BotocoreShape):
+class Shape(BotocoreShape):  # type: ignore[misc]
     # Custom Moto model properties that we want available in the serialization dict.
     SERIALIZED_ATTRS = BotocoreShape.SERIALIZED_ATTRS + [
         "locationNameForQueryCompatibility"
@@ -55,25 +55,25 @@ class Shape(BotocoreShape):
         return "location" in self.serialization
 
 
-class StringShape(BotocoreStringShape, Shape):
+class StringShape(BotocoreStringShape, Shape):  # type: ignore[misc]
     pass
 
 
-class ListShape(BotocoreListShape, Shape):
+class ListShape(BotocoreListShape, Shape):  # type: ignore[misc]
     pass
 
 
-class MapShape(BotocoreMapShape, Shape):
+class MapShape(BotocoreMapShape, Shape):  # type: ignore[misc]
     pass
 
 
-class StructureShape(BotocoreStructureShape, Shape):
-    @CachedProperty
-    def members(self) -> dict[str, Shape]:  # type: ignore[override]
+class StructureShape(BotocoreStructureShape, Shape):  # type: ignore[misc]
+    @CachedProperty  # type: ignore[misc, untyped-decorator]
+    def members(self) -> dict[str, Shape]:  # type: ignore[override, misc]
         return cast(dict[str, Shape], super().members)
 
-    @CachedProperty
-    def error_code_aliases(self) -> list[str]:
+    @CachedProperty  # type: ignore[misc, untyped-decorator]
+    def error_code_aliases(self) -> list[str]:  # type: ignore[misc]
         if not self.metadata.get("exception", False):
             return []
         error_metadata = self.metadata.get("error", {})
@@ -81,7 +81,7 @@ class StructureShape(BotocoreStructureShape, Shape):
         return aliases
 
 
-class ServiceModel(BotocoreServiceModel):
+class ServiceModel(BotocoreServiceModel):  # type: ignore[misc]
     def __init__(
         self, service_description: Mapping[str, Any], service_name: str | None = None
     ):
@@ -89,18 +89,18 @@ class ServiceModel(BotocoreServiceModel):
         # Use our custom shape resolver.
         self._shape_resolver = ShapeResolver(service_description.get("shapes", {}))
 
-    @instance_cache
+    @instance_cache  # type: ignore[misc, untyped-decorator]
     def operation_model(self, operation_name: str) -> OperationModel:  # type: ignore[misc]
         operation_model = super().operation_model(operation_name)
         model = getattr(operation_model, "_operation_model", {})
         return OperationModel(model, self, operation_name)
 
-    @CachedProperty
-    def is_query_compatible(self) -> bool:
+    @CachedProperty  # type: ignore[misc, untyped-decorator]
+    def is_query_compatible(self) -> bool:  # type: ignore[misc]
         return "awsQueryCompatible" in self.metadata
 
 
-class OperationModel(BotocoreOperationModel):
+class OperationModel(BotocoreOperationModel):  # type: ignore[misc]
     _operation_model: dict[str, Any]
     _service_model: ServiceModel
 
@@ -109,7 +109,7 @@ class OperationModel(BotocoreOperationModel):
         return self._service_model
 
 
-class ShapeResolver(BotocoreShapeResolver):
+class ShapeResolver(BotocoreShapeResolver):  # type: ignore[misc]
     SHAPE_CLASSES = {
         "structure": StructureShape,  # type: ignore[dict-item]
         "list": ListShape,  # type: ignore[dict-item]

@@ -304,7 +304,7 @@ class CertificateAuthority(BaseModel):
         if self.certificate is None:
             return None
         try:
-            return unix_time(self.certificate.not_valid_after_utc.replace(tzinfo=None))
+            return unix_time(self.certificate.not_valid_after_utc.replace(tzinfo=None))  # type: ignore[attr-defined]
         except AttributeError:
             return unix_time(self.certificate.not_valid_after)
 
@@ -313,7 +313,7 @@ class CertificateAuthority(BaseModel):
         if self.certificate is None:
             return None
         try:
-            return unix_time(self.certificate.not_valid_before_utc.replace(tzinfo=None))
+            return unix_time(self.certificate.not_valid_before_utc.replace(tzinfo=None))  # type: ignore[attr-defined]
         except AttributeError:
             return unix_time(self.certificate.not_valid_before)
 

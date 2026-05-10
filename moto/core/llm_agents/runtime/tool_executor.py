@@ -23,7 +23,7 @@ def execute_agent_tool_requests(
             continue
         name = str(request.get("tool") or request.get("name") or "")
         args = request.get("args") if isinstance(request.get("args"), dict) else {}
-        output = _execute_one(name, args, canonical, world_state, history_context)
+        output = _execute_one(name, args, canonical, world_state, history_context)  # type: ignore[arg-type]
         observations.append(
             json.dumps(
                 {"tool": name, "output": output},

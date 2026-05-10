@@ -88,7 +88,7 @@ ERROR_RESPONSE = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-class RESTError(HTTPException):
+class RESTError(HTTPException):  # type: ignore[misc]
     code = 400
     # most APIs use <RequestId>, but some APIs (including EC2, S3) use <RequestID>
     request_id_tag_name = "RequestId"

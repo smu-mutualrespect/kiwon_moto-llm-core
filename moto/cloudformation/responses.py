@@ -2,9 +2,9 @@ import json
 import re
 from typing import Any, Optional
 
-import yaml
-from yaml.parser import ParserError
-from yaml.scanner import ScannerError
+import yaml  # type: ignore[import-untyped]
+from yaml.parser import ParserError  # type: ignore[import-untyped]
+from yaml.scanner import ScannerError  # type: ignore[import-untyped]
 
 from moto.core.common_models import CloudFormationModel
 from moto.core.responses import ActionResult, BaseResponse, EmptyResult

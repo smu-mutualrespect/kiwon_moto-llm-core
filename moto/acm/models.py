@@ -287,7 +287,7 @@ class CertBundle(BaseModel):
         self, _cert: cryptography.x509.base.Certificate
     ) -> datetime.datetime:
         try:
-            return _cert.not_valid_after_utc.replace(tzinfo=None)
+            return _cert.not_valid_after_utc.replace(tzinfo=None)  # type: ignore[attr-defined]
         except AttributeError:
             return _cert.not_valid_after
 
@@ -295,7 +295,7 @@ class CertBundle(BaseModel):
         self, _cert: cryptography.x509.base.Certificate
     ) -> datetime.datetime:
         try:
-            return _cert.not_valid_before_utc.replace(tzinfo=None)
+            return _cert.not_valid_before_utc.replace(tzinfo=None)  # type: ignore[attr-defined]
         except AttributeError:
             return _cert.not_valid_before
 

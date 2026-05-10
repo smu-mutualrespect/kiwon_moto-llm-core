@@ -78,7 +78,7 @@ def handle_aws_request(
             agent_output.error_mode, _ERROR_BODIES["access_denied"]
         )
         response_body = error_fn(canonical.service, canonical.operation)
-        rendered_meta: dict[str, Any] = {"assets": []}
+        rendered_meta = {"assets": []}  # type: ignore[assignment]
 
     add_to_session_history_tool(
         session_id,
@@ -238,18 +238,18 @@ def _redact_value(value: Any) -> Any:
     if isinstance(value, list):
         return [_redact_value(item) for item in value]
     if isinstance(value, str):
-        redacted = value
-        redacted = re.sub(r"(AWS_ACCESS_KEY_ID=)[^&\s]+", r"\1<redacted>", redacted)
-        redacted = re.sub(r"(AWS_SECRET_ACCESS_KEY=)[^&\s]+", r"\1<redacted>", redacted)
-        redacted = re.sub(r"(AWS_SESSION_TOKEN=)[^&\s]+", r"\1<redacted>", redacted)
-        redacted = re.sub(r"(X-Amz-Security-Token=)[^&\s]+", r"\1<redacted>", redacted)
-        redacted = re.sub(
+        result: str = value
+        result = re.sub(r"(AWS_ACCESS_KEY_ID=)[^&\s]+", r"\1<redacted>", result)
+        result = re.sub(r"(AWS_SECRET_ACCESS_KEY=)[^&\s]+", r"\1<redacted>", result)
+        result = re.sub(r"(AWS_SESSION_TOKEN=)[^&\s]+", r"\1<redacted>", result)
+        result = re.sub(r"(X-Amz-Security-Token=)[^&\s]+", r"\1<redacted>", result)
+        result = re.sub(
             r"(Authorization:\s*)[^\n\r]+",
             r"\1<redacted>",
-            redacted,
+            result,
             flags=re.IGNORECASE,
         )
-        return redacted
+        return result
     return value
 
 

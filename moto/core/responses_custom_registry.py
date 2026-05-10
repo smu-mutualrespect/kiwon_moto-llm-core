@@ -9,7 +9,7 @@ from .custom_responses_mock import CallbackResponse, not_implemented_callback
 from .utils import get_equivalent_url_in_aws_domain
 
 
-class CustomRegistry(responses.registries.FirstMatchRegistry):
+class CustomRegistry(responses.registries.FirstMatchRegistry):  # type: ignore[misc]
     """
     Custom Registry that returns requests in an order that makes sense for Moto:
      - Implemented callbacks take precedence over non-implemented-callbacks

@@ -16,7 +16,7 @@ from moto.core.versions import is_responses_0_17_x
 from .responses import TYPE_RESPONSE
 
 
-class CallbackResponse(responses.CallbackResponse):
+class CallbackResponse(responses.CallbackResponse):  # type: ignore[misc]
     """
     Need to subclass so we can change a couple things
     """

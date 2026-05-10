@@ -26,7 +26,7 @@ import moto
 moto_root = os.path.dirname(os.path.abspath(moto.__file__))
 
 
-class Loader(BotocoreLoader):
+class Loader(BotocoreLoader):  # type: ignore[misc]
     BUILTIN_EXTRAS_TYPES = ["moto"]
 
 
