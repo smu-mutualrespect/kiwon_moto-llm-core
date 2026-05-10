@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 _ROOT = Path(__file__).resolve().parents[1]
 _AGENT_MD_PATH = _ROOT / "agent.md"
 _SKILLS_DIR = _ROOT / "skills"

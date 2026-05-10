@@ -68,3 +68,4 @@ artifacts/agentic_probe_*.json
 artifacts/workflow_probe_*.json
 artifacts/single_probe_*.json
 artifacts/reasoning_models_comparison.json
+.github_env

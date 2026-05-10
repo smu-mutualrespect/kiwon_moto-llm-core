@@ -27,13 +27,13 @@ from moto import settings
 from moto.core.authorization import ActionAuthenticatorMixin
 from moto.core.common_types import TYPE_IF_NONE, TYPE_RESPONSE
 from moto.core.exceptions import ServiceException
-from moto.core.llm_fallback import build_llm_fallback_json
 from moto.core.llm_agents import handle_aws_request
 from moto.core.llm_agents.tools import (
     extract_session_id_tool,
     normalize_request_tool,
     record_native_interaction_tool,
 )
+from moto.core.llm_fallback import build_llm_fallback_json
 from moto.core.model import OperationModel, ServiceModel
 from moto.core.parse import PROTOCOL_PARSERS, XFormedDict
 from moto.core.request import determine_request_protocol, normalize_request
@@ -256,6 +256,26 @@ class EmptyResult(ActionResult):
 
     def __init__(self) -> None:
         super().__init__(None)
+
+
+def _moto_native_needs_fallback(
+    service: str, operation: Optional[str], body: Any, status: int
+) -> bool:
+    """Moto native 응답이 실제 AWS CLI 형식(botocore 스키마)과 다르면 True 반환."""
+    if not operation:
+        return False
+    if os.getenv("MOTO_LLM_VALIDATE_NATIVE", "1").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return False
+    try:
+        from moto.core.llm_agents.tools import validate_moto_native_response
+
+        return validate_moto_native_response(service, operation, body, status)
+    except Exception:
+        return False
 
 
 class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
@@ -642,6 +662,27 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                 status, headers, body = self._transform_response(headers, response)
 
             headers, body = self._enrich_response(headers, body)
+
+            # Moto native 응답을 실제 AWS CLI 형식(botocore 스키마)과 비교
+            # 형식이 다르거나 필수 필드가 빠지면 Agent가 대신 응답
+            if self.service_name and _moto_native_needs_fallback(
+                self.service_name, self._get_action(), body, status
+            ):
+                try:
+                    fallback_text = handle_aws_request(
+                        service=self.service_name,
+                        action=action,
+                        url=self.uri,
+                        headers=dict(self.headers),
+                        body=self.body,
+                        reason="Moto native response did not match AWS CLI format",
+                        source="responses.call_action.native_validation",
+                    )
+                    self._record_native_history_if_enabled(status, body)
+                    return 200, headers, fallback_text
+                except Exception:
+                    pass  # fallback도 실패하면 원본 Moto 응답 유지
+
             self._record_native_history_if_enabled(status, body)
 
             return status, headers, body

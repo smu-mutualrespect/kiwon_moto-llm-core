@@ -1,4 +1,3 @@
-import os
 import types
 from http.client import responses as http_responses
 from io import BytesIO
@@ -10,8 +9,8 @@ from werkzeug.wrappers import Request
 
 from moto.backends import get_service_from_url
 from moto.core.config import passthrough_service, passthrough_url
-from moto.core.llm_fallback import build_llm_fallback_json
 from moto.core.llm_agents import handle_aws_request
+from moto.core.llm_fallback import build_llm_fallback_json
 from moto.core.versions import is_responses_0_17_x
 
 from .responses import TYPE_RESPONSE

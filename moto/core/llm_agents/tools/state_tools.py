@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import re
+from copy import deepcopy
 from typing import Any
 
 from .request_tools import CanonicalRequest
@@ -21,8 +21,12 @@ def get_session_history_tool(session_id: str) -> str:
     return "\n".join(formatted)
 
 
-def add_to_session_history_tool(session_id: str, request_info: str, response: str) -> None:
-    _session_storage.setdefault(session_id, []).append({"request": request_info, "response": response})
+def add_to_session_history_tool(
+    session_id: str, request_info: str, response: str
+) -> None:
+    _session_storage.setdefault(session_id, []).append(
+        {"request": request_info, "response": response}
+    )
     if len(_session_storage[session_id]) > 8:
         _session_storage[session_id].pop(0)
 
@@ -67,7 +71,9 @@ def update_world_state_tool(
     next_state = deepcopy(current)
 
     next_state["phase"] = agent_output.intent_phase
-    risk_score = float(next_state.get("risk_score", 0.2)) + float(agent_output.risk_delta)
+    risk_score = float(next_state.get("risk_score", 0.2)) + float(
+        agent_output.risk_delta
+    )
     next_state["risk_score"] = max(0.0, min(1.0, risk_score))
 
     action_key = f"{canonical.service}:{canonical.operation}"

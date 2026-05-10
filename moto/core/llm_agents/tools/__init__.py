@@ -9,7 +9,11 @@ from .state_tools import (
     record_native_interaction_tool,
     update_world_state_tool,
 )
-from .validation_tools import build_comparison_points_tool, validate_rendered_response_tool
+from .validation_tools import (
+    build_comparison_points_tool,
+    validate_moto_native_response,
+    validate_rendered_response_tool,
+)
 
 __all__ = [
     "add_to_session_history_tool",
@@ -22,5 +26,6 @@ __all__ = [
     "record_native_interaction_tool",
     "serialize_response_tool",
     "update_world_state_tool",
+    "validate_moto_native_response",
     "validate_rendered_response_tool",
 ]

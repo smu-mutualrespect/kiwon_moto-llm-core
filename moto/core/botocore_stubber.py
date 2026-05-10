@@ -1,4 +1,3 @@
-import os
 import re
 from io import BytesIO
 from typing import Any, Optional, Union
@@ -10,8 +9,8 @@ from moto.core.base_backend import BackendDict
 from moto.core.common_types import TYPE_RESPONSE
 from moto.core.config import passthrough_service, passthrough_url, service_whitelisted
 from moto.core.exceptions import ServiceNotWhitelisted
-from moto.core.llm_fallback import build_llm_fallback_json
 from moto.core.llm_agents import handle_aws_request
+from moto.core.llm_fallback import build_llm_fallback_json
 from moto.core.utils import get_equivalent_url_in_aws_domain
 
 

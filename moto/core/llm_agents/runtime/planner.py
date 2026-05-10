@@ -5,8 +5,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from .skill_loader import load_agent_system_prompt
 from ..tools.request_tools import CanonicalRequest
+from .skill_loader import load_agent_system_prompt
 
 _ALLOWED_PHASES = {"recon", "privilege_check", "lateral_probe", "impact_probe"}
 _ALLOWED_ERROR_MODES = {"none", "access_denied", "throttling", "not_found"}
@@ -67,10 +67,14 @@ def _build_compact_agent_prompt(
     latest_observation: str = "",
     available_tools: list[str] | None = None,
 ) -> str:
-    account_id = str(world_state.get("consistency_locks", {}).get("account_id", "123456789012"))
+    account_id = str(
+        world_state.get("consistency_locks", {}).get("account_id", "123456789012")
+    )
     region = str(world_state.get("region", "us-east-1"))
     latest_observation_block = latest_observation or "None"
-    tool_block = json.dumps(available_tools or [], ensure_ascii=False, separators=(",", ":"))
+    tool_block = json.dumps(
+        available_tools or [], ensure_ascii=False, separators=(",", ":")
+    )
     return (
         f"{load_agent_system_prompt()}\n\n"
         "CURRENT_REQUEST_COMPACT: "
@@ -93,20 +97,45 @@ def parse_agent_output(raw_text: str) -> AgentOutput:
     if not isinstance(parsed, dict):
         return DEFAULT_OUTPUT
 
-    intent_phase = _coerce_enum(parsed.get("intent_phase"), _ALLOWED_PHASES, DEFAULT_OUTPUT.intent_phase)
-    response_posture = _coerce_enum(parsed.get("response_posture"), _ALLOWED_POSTURES, DEFAULT_OUTPUT.response_posture)
-    decoy_bundle_id = _coerce_bundle_id(parsed.get("decoy_bundle_id"), DEFAULT_OUTPUT.decoy_bundle_id)
-    risk_delta = max(-0.2, min(0.5, _coerce_float(parsed.get("risk_delta"), DEFAULT_OUTPUT.risk_delta)))
+    intent_phase = _coerce_enum(
+        parsed.get("intent_phase"), _ALLOWED_PHASES, DEFAULT_OUTPUT.intent_phase
+    )
+    response_posture = _coerce_enum(
+        parsed.get("response_posture"),
+        _ALLOWED_POSTURES,
+        DEFAULT_OUTPUT.response_posture,
+    )
+    decoy_bundle_id = _coerce_bundle_id(
+        parsed.get("decoy_bundle_id"), DEFAULT_OUTPUT.decoy_bundle_id
+    )
+    risk_delta = max(
+        -0.2,
+        min(0.5, _coerce_float(parsed.get("risk_delta"), DEFAULT_OUTPUT.risk_delta)),
+    )
 
     reason_tags = parsed.get("reason_tags")
     if not isinstance(reason_tags, list):
         reason_tags = list(DEFAULT_OUTPUT.reason_tags)
     reason_tags = [str(t) for t in reason_tags][:6]
 
-    error_mode = _coerce_enum(parsed.get("error_mode"), _ALLOWED_ERROR_MODES, DEFAULT_OUTPUT.error_mode)
-    field_values = parsed.get("field_values") if isinstance(parsed.get("field_values"), dict) else {}
-    environment_delta = parsed.get("environment_delta") if isinstance(parsed.get("environment_delta"), dict) else {}
-    tool_requests = parsed.get("tool_requests") if isinstance(parsed.get("tool_requests"), list) else []
+    error_mode = _coerce_enum(
+        parsed.get("error_mode"), _ALLOWED_ERROR_MODES, DEFAULT_OUTPUT.error_mode
+    )
+    field_values = (
+        parsed.get("field_values")
+        if isinstance(parsed.get("field_values"), dict)
+        else {}
+    )
+    environment_delta = (
+        parsed.get("environment_delta")
+        if isinstance(parsed.get("environment_delta"), dict)
+        else {}
+    )
+    tool_requests = (
+        parsed.get("tool_requests")
+        if isinstance(parsed.get("tool_requests"), list)
+        else []
+    )
     tool_requests = [item for item in tool_requests if isinstance(item, dict)][:3]
 
     return AgentOutput(

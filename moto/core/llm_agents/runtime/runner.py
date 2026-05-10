@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from typing import Any
 
 from ..shape_adapter import adapt_response_plan
 from ..tools import build_response_plan_tool, validate_rendered_response_tool
-from ..tools.request_tools import CanonicalRequest
 from ..tools.render_tools import serialize_response_tool
-from .planner import AgentOutput, DEFAULT_OUTPUT, build_agent_prompt, parse_agent_output
+from ..tools.request_tools import CanonicalRequest
+from .planner import DEFAULT_OUTPUT, AgentOutput, build_agent_prompt, parse_agent_output
 from .provider import _load_dotenv_if_present, call_gpt_api_with_meta, select_provider
 from .tool_executor import execute_agent_tool_requests
 from .tool_registry import get_available_tool_names
@@ -78,15 +78,21 @@ def run_agent_loop(
                 planner_meta=last_planner_meta,
             )
 
-        response_plan = build_response_plan_tool(canonical, agent_output, world_state, raw_text)
-        field_values, plan_meta = adapt_response_plan(canonical, response_plan, world_state)
+        response_plan = build_response_plan_tool(
+            canonical, agent_output, world_state, raw_text
+        )
+        field_values, plan_meta = adapt_response_plan(
+            canonical, response_plan, world_state
+        )
         response_body, rendered_meta = serialize_response_tool(canonical, field_values)
 
         if not response_body:
             latest_observation = "serializer returned empty body; return a safer and more explicit response_plan"
             continue
 
-        validation_passed, validation_reason = validate_rendered_response_tool(canonical, response_body, world_state)
+        validation_passed, validation_reason = validate_rendered_response_tool(
+            canonical, response_body, world_state
+        )
         merged_meta = {
             **plan_meta,
             **rendered_meta,
@@ -134,11 +140,15 @@ def _call_agent_once(
     available_tools: list[str],
 ) -> tuple[AgentOutput, str, dict[str, Any]]:
     if os.getenv("MOTO_LLM_OFFLINE_STUB", "").strip().lower() in {"1", "true", "yes"}:
-        return DEFAULT_OUTPUT, "", {
-            "provider": "offline_stub",
-            "model": "deterministic_response_plan",
-            "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
-        }
+        return (
+            DEFAULT_OUTPUT,
+            "",
+            {
+                "provider": "offline_stub",
+                "model": "deterministic_response_plan",
+                "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            },
+        )
 
     _load_dotenv_if_present()
     prompt = build_agent_prompt(
@@ -153,8 +163,12 @@ def _call_agent_once(
     try:
         raw, meta = call_gpt_api_with_meta(prompt)
     except Exception:
-        return DEFAULT_OUTPUT, "", {
-            "provider": select_provider(),
-            "error": "provider_call_failed",
-        }
+        return (
+            DEFAULT_OUTPUT,
+            "",
+            {
+                "provider": select_provider(),
+                "error": "provider_call_failed",
+            },
+        )
     return parse_agent_output(raw), raw, meta
