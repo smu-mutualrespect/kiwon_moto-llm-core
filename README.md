@@ -59,8 +59,8 @@ moto_server -p 5000
 To test the environment, open a **new terminal window** and activate the environment again:
 
 ```bash
-sudo su - moto
-source moto-env/bin/activate
+sudo su - <user account>
+source <Name of the virtual environment you created>-env/bin/activate
 
 ```
 
