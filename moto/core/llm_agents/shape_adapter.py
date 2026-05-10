@@ -63,7 +63,10 @@ def _generate_structure(
 
     result: dict[str, Any] = {}
     for member_name, member_shape in shape.members.items():
-        if member_name in response_plan.omit_fields and member_name not in protected_members:
+        if (
+            member_name in response_plan.omit_fields
+            and member_name not in protected_members
+        ):
             continue
         value = _generate_value(
             member_name,
@@ -93,7 +96,9 @@ def _generate_value(
 ) -> Any:
     explicit = _lookup_explicit_hint(member_name, canonical, response_plan)
     if explicit is not None and _explicit_hint_is_compatible(shape, explicit):
-        return _coerce_explicit_hint(shape, explicit, canonical, world_state, member_name)
+        return _coerce_explicit_hint(
+            shape, explicit, canonical, world_state, member_name
+        )
 
     if shape.type_name == "structure":
         return _generate_structure(
@@ -145,14 +150,17 @@ def _generate_list(
     explicit = _lookup_explicit_hint(member_name, canonical, response_plan)
     if isinstance(explicit, list):
         if (
-            (canonical.service, canonical.operation) == ("ssm", "DescribeInstanceInformation")
+            (canonical.service, canonical.operation)
+            == ("ssm", "DescribeInstanceInformation")
             and member_name == "InstanceInformationList"
             and not explicit
         ):
             explicit = None
         else:
             coerced_items = [
-                _coerce_explicit_hint(shape.member, item, canonical, world_state, member_name)
+                _coerce_explicit_hint(
+                    shape.member, item, canonical, world_state, member_name
+                )
                 for item in explicit
             ]
             coerced_items = [item for item in coerced_items if item is not None]
@@ -237,11 +245,15 @@ def _coerce_explicit_hint(
             if nested_shape is None:
                 coerced[key] = value
                 continue
-            coerced[key] = _coerce_explicit_hint(nested_shape, value, canonical, world_state, key)
+            coerced[key] = _coerce_explicit_hint(
+                nested_shape, value, canonical, world_state, key
+            )
         return coerced
     if type_name == "list" and isinstance(explicit, list):
         return [
-            _coerce_explicit_hint(shape.member, item, canonical, world_state, member_name)
+            _coerce_explicit_hint(
+                shape.member, item, canonical, world_state, member_name
+            )
             for item in explicit
         ]
     if type_name == "map" and isinstance(explicit, dict):
@@ -259,7 +271,9 @@ def _coerce_explicit_hint(
             explicit = explicit[0] if explicit else ""
         elif isinstance(explicit, dict):
             explicit = json.dumps(explicit, separators=(",", ":"))
-        return _normalize_string_hint(str(explicit), canonical, world_state, member_name)
+        return _normalize_string_hint(
+            str(explicit), canonical, world_state, member_name
+        )
     if type_name == "boolean":
         if isinstance(explicit, str):
             return explicit.strip().lower() in {"true", "1", "yes", "enabled", "active"}
@@ -268,7 +282,13 @@ def _coerce_explicit_hint(
         if isinstance(explicit, (int, float)):
             return int(explicit)
         text = str(explicit).strip()
-        return int(text) if text.isdigit() else _generate_integer(member_name, canonical, ResponsePlan("success", "normal", {}, {}, []))
+        return (
+            int(text)
+            if text.isdigit()
+            else _generate_integer(
+                member_name, canonical, ResponsePlan("success", "normal", {}, {}, [])
+            )
+        )
     if type_name in {"float", "double"}:
         if isinstance(explicit, (int, float)):
             return float(explicit)
@@ -276,7 +296,13 @@ def _coerce_explicit_hint(
         try:
             return float(text)
         except ValueError:
-            return float(_generate_integer(member_name, canonical, ResponsePlan("success", "normal", {}, {}, [])))
+            return float(
+                _generate_integer(
+                    member_name,
+                    canonical,
+                    ResponsePlan("success", "normal", {}, {}, []),
+                )
+            )
     return explicit
 
 
@@ -304,7 +330,9 @@ def _normalize_string_hint(
 ) -> str:
     if not value:
         return value
-    account_id = str(world_state.get("consistency_locks", {}).get("account_id", "123456789012"))
+    account_id = str(
+        world_state.get("consistency_locks", {}).get("account_id", "123456789012")
+    )
     region = str(world_state.get("region", "us-east-1"))
     if value.startswith("arn:aws:"):
         return _rewrite_arn_account(value, account_id, region, canonical)
@@ -325,7 +353,10 @@ def _rewrite_arn_account(
         if parts[3] in {"", "*"}:
             parts[3] = region
         return ":".join(parts)
-    suffix = re.sub(r"[^A-Za-z0-9/_+=,.@-]+", "-", value).strip("-") or canonical.operation.lower()
+    suffix = (
+        re.sub(r"[^A-Za-z0-9/_+=,.@-]+", "-", value).strip("-")
+        or canonical.operation.lower()
+    )
     return f"arn:aws:{canonical.service}:{region}:{account_id}:{suffix}"
 
 
@@ -341,14 +372,18 @@ def _generate_scalar_string(
         if preferred:
             return preferred
 
-    account_id = str(world_state.get("consistency_locks", {}).get("account_id", "123456789012"))
+    account_id = str(
+        world_state.get("consistency_locks", {}).get("account_id", "123456789012")
+    )
     region = str(world_state.get("region", "us-east-1"))
     lowered = member_name.lower()
     shape_name = getattr(shape, "name", "")
     combined = f"{shape_name} {member_name}".lower()
 
     if "arn" in combined:
-        target = canonical.target_identifiers.get(member_name) or canonical.target_identifiers.get("Arn")
+        target = canonical.target_identifiers.get(
+            member_name
+        ) or canonical.target_identifiers.get("Arn")
         if target:
             return target
         return f"arn:aws:{canonical.service}:{region}:{account_id}:{canonical.operation.lower()}/{_random_hex(8)}"
@@ -371,7 +406,9 @@ def _generate_scalar_string(
             return f"ip-10-42-{random.randint(0, 9)}-{random.randint(10, 250)}"
         return f"{canonical.service}-{canonical.operation.lower()}"
     if "digest" in combined:
-        return canonical.target_identifiers.get(member_name, "sha256:" + _random_hex(64))
+        return canonical.target_identifiers.get(
+            member_name, "sha256:" + _random_hex(64)
+        )
     if "uploadid" in combined or "upload id" in combined:
         return "upload-" + _random_hex(12)
     if "jobid" in combined or "job id" in combined:
@@ -398,7 +435,11 @@ def _generate_scalar_string(
     if "username" in combined or "user name" in combined:
         return canonical.target_identifiers.get(member_name, "victim-admin")
     if "servicename" in combined or "service name" in combined:
-        return "codecommit.amazonaws.com" if canonical.service == "iam" else f"{canonical.service}.amazonaws.com"
+        return (
+            "codecommit.amazonaws.com"
+            if canonical.service == "iam"
+            else f"{canonical.service}.amazonaws.com"
+        )
     if "servicusername" in combined or "service username" in combined:
         return "victim-admin-at-0"
     if lowered == "servicecredentialalias":
@@ -463,7 +504,9 @@ def _generate_scalar_string(
             return "ManagedInstance"
         return "AWS::EC2::Instance"
     if lowered.endswith("at") or lowered.endswith("date"):
-        if any(token in lowered for token in ("created", "updated", "analyzed", "date")):
+        if any(
+            token in lowered for token in ("created", "updated", "analyzed", "date")
+        ):
             return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if "availabilityzone" in combined:
         return f"{region}a"
@@ -540,7 +583,9 @@ def _collect_assets(payload: Any) -> list[str]:
     if isinstance(payload, dict):
         for key, value in payload.items():
             lowered = key.lower()
-            if any(token in lowered for token in ("id", "arn", "digest")) and isinstance(value, str):
+            if any(
+                token in lowered for token in ("id", "arn", "digest")
+            ) and isinstance(value, str):
                 if value not in assets:
                     assets.append(value)
             for nested in _collect_assets(value):
@@ -566,7 +611,15 @@ def _apply_string_index_variation(member_name: str, value: str, idx: int) -> str
     if idx == 0:
         return value
     lowered = member_name.lower()
-    if lowered in {"instanceid", "reservationid", "imageid", "registryid", "layerdigest", "uploadid", "jobid"}:
+    if lowered in {
+        "instanceid",
+        "reservationid",
+        "imageid",
+        "registryid",
+        "layerdigest",
+        "uploadid",
+        "jobid",
+    }:
         return value
     if "arn" in lowered or "digest" in lowered:
         return value

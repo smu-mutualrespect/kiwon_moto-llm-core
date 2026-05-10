@@ -63,7 +63,11 @@ def _extract_action(action: Optional[str], headers: dict[str, Any], body: Any) -
     target = headers.get("X-Amz-Target") or headers.get("x-amz-target")
     if target:
         return str(target).split(".")[-1]
-    body_text = body.decode("utf-8", errors="ignore") if isinstance(body, bytes) else str(body or "")
+    body_text = (
+        body.decode("utf-8", errors="ignore")
+        if isinstance(body, bytes)
+        else str(body or "")
+    )
     if "Action=" in body_text:
         params = parse_qs(body_text, keep_blank_values=True)
         values = params.get("Action")
@@ -72,8 +76,14 @@ def _extract_action(action: Optional[str], headers: dict[str, Any], body: Any) -
     return "UnknownAction"
 
 
-def _extract_request_params(headers: dict[str, Any], body: Any) -> tuple[dict[str, Any], str]:
-    body_text = body.decode("utf-8", errors="ignore") if isinstance(body, bytes) else str(body or "")
+def _extract_request_params(
+    headers: dict[str, Any], body: Any
+) -> tuple[dict[str, Any], str]:
+    body_text = (
+        body.decode("utf-8", errors="ignore")
+        if isinstance(body, bytes)
+        else str(body or "")
+    )
     stripped = body_text.strip()
     if stripped.startswith("{") or stripped.startswith("["):
         try:
@@ -116,7 +126,10 @@ def _extract_target_identifiers(request_params: dict[str, Any]) -> dict[str, str
         if not key:
             return
         lowered = key.lower()
-        if any(token in lowered for token in ("arn", "name", "id", "digest", "secret", "repository", "user")):
+        if any(
+            token in lowered
+            for token in ("arn", "name", "id", "digest", "secret", "repository", "user")
+        ):
             identifiers[key] = str(value)
             if lowered.endswith("s") and len(key) > 1:
                 identifiers.setdefault(key[:-1], str(value))
@@ -128,7 +141,9 @@ def _extract_target_identifiers(request_params: dict[str, Any]) -> dict[str, str
 
 
 def _canonical_operation(raw_action: str) -> str:
-    action = re.sub(r"[^A-Za-z0-9]+", " ", raw_action.split(":")[-1].split(".")[-1].strip())
+    action = re.sub(
+        r"[^A-Za-z0-9]+", " ", raw_action.split(":")[-1].split(".")[-1].strip()
+    )
     parts = [p for p in action.split() if p]
     if not parts:
         return "UnknownAction"

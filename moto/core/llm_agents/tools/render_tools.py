@@ -36,7 +36,9 @@ def _collect_assets(payload: Any) -> list[str]:
     if isinstance(payload, dict):
         for key, value in payload.items():
             lowered = key.lower()
-            if any(t in lowered for t in ("id", "arn", "digest")) and isinstance(value, str):
+            if any(t in lowered for t in ("id", "arn", "digest")) and isinstance(
+                value, str
+            ):
                 if value not in assets:
                     assets.append(value)
             for nested in _collect_assets(value):

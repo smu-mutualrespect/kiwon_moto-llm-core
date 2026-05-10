@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 
 from moto.core.llm_agents.agent import handle_aws_request
-from moto.core.llm_agents.runtime import DEFAULT_OUTPUT, call_gpt_api_with_meta, parse_agent_output
+from moto.core.llm_agents.runtime import (
+    DEFAULT_OUTPUT,
+    call_gpt_api_with_meta,
+    parse_agent_output,
+)
 from moto.core.llm_agents.runtime.tool_executor import execute_agent_tool_requests
 from moto.core.llm_agents.runtime.tool_registry import get_available_tool_names
 from moto.core.llm_agents.shape_adapter import adapt_response_plan
@@ -35,7 +39,9 @@ def test_normalizer_extracts_json_request_params_and_identifiers() -> None:
         service=None,
         action=None,
         url="https://api.ecr.ap-northeast-2.amazonaws.com/",
-        headers={"X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.CompleteLayerUpload"},
+        headers={
+            "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.CompleteLayerUpload"
+        },
         body='{"repositoryName":"demo","layerDigest":"sha256:abc","uploadId":"test"}',
     )
     assert req.service == "ecr"
@@ -50,7 +56,9 @@ def test_parse_agent_output_falls_back_on_invalid_text() -> None:
     assert parse_agent_output("not-a-json") == DEFAULT_OUTPUT
 
 
-def test_default_handle_aws_request_uses_agentic_runtime_without_mode_env(monkeypatch, tmp_path) -> None:
+def test_default_handle_aws_request_uses_agentic_runtime_without_mode_env(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.delenv("MOTO_LLM_RUNTIME_MODE", raising=False)
     monkeypatch.setenv("MOTO_LLM_OFFLINE_STUB", "1")
     audit_file = tmp_path / "audit.json"
@@ -117,7 +125,9 @@ def test_handle_aws_request_replans_after_validation_failure(monkeypatch) -> Non
         return next(responses), {"provider": "openai", "duration_ms": 1.0}
 
     monkeypatch.delenv("MOTO_LLM_OFFLINE_STUB", raising=False)
-    monkeypatch.setattr("moto.core.llm_agents.runtime.runner.call_gpt_api_with_meta", fake_call)
+    monkeypatch.setattr(
+        "moto.core.llm_agents.runtime.runner.call_gpt_api_with_meta", fake_call
+    )
     monkeypatch.setenv("MOTO_LLM_AGENT_MAX_ATTEMPTS", "2")
 
     response_body = handle_aws_request(
@@ -150,7 +160,10 @@ def test_handle_aws_request_executes_agent_tool_request(monkeypatch) -> None:
                     "risk_delta": 0.1,
                     "reason_tags": ["enum_pattern"],
                     "tool_requests": [
-                        {"tool": "skills.load_skill_document", "args": {"skill": "recon_skill"}}
+                        {
+                            "tool": "skills.load_skill_document",
+                            "args": {"skill": "recon_skill"},
+                        }
                     ],
                 }
             ),
@@ -177,7 +190,9 @@ def test_handle_aws_request_executes_agent_tool_request(monkeypatch) -> None:
         return next(responses), {"provider": "openai", "duration_ms": 1.0}
 
     monkeypatch.delenv("MOTO_LLM_OFFLINE_STUB", raising=False)
-    monkeypatch.setattr("moto.core.llm_agents.runtime.runner.call_gpt_api_with_meta", fake_call)
+    monkeypatch.setattr(
+        "moto.core.llm_agents.runtime.runner.call_gpt_api_with_meta", fake_call
+    )
     monkeypatch.setenv("MOTO_LLM_AGENT_MAX_ATTEMPTS", "2")
 
     response_body = handle_aws_request(
@@ -202,7 +217,9 @@ def test_agent_tool_executor_exposes_honeypot_tools() -> None:
         service="ecr",
         action="BatchCheckLayerAvailability",
         url="https://api.ecr.us-east-1.amazonaws.com/",
-        headers={"X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.BatchCheckLayerAvailability"},
+        headers={
+            "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.BatchCheckLayerAvailability"
+        },
         body='{"repositoryName":"demo","layerDigests":["sha256:abc"]}',
     )
     world_state = {
@@ -309,7 +326,10 @@ def test_shape_adapter_and_serializer_for_iam_query() -> None:
         headers={},
         body="Action=GetContextKeysForPrincipalPolicy",
     )
-    world_state = {"consistency_locks": {"account_id": "123456789012"}, "exposed_assets": []}
+    world_state = {
+        "consistency_locks": {"account_id": "123456789012"},
+        "exposed_assets": [],
+    }
     plan = build_response_plan_tool(canonical, DEFAULT_OUTPUT, world_state, "")
     payload, _ = adapt_response_plan(canonical, plan, world_state)
     body, render_meta = serialize_response_tool(canonical, payload)
@@ -327,7 +347,10 @@ def test_shape_adapter_and_serializer_for_ecr_json() -> None:
         headers={},
         body="{}",
     )
-    world_state = {"consistency_locks": {"account_id": "123456789012"}, "exposed_assets": []}
+    world_state = {
+        "consistency_locks": {"account_id": "123456789012"},
+        "exposed_assets": [],
+    }
     plan = build_response_plan_tool(canonical, DEFAULT_OUTPUT, world_state, "")
     payload, _ = adapt_response_plan(canonical, plan, world_state)
     body, render_meta = serialize_response_tool(canonical, payload)
@@ -343,10 +366,15 @@ def test_shape_adapter_echoes_request_identifiers_when_available() -> None:
         service=None,
         action=None,
         url="https://api.ecr.us-east-1.amazonaws.com/",
-        headers={"X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.CompleteLayerUpload"},
+        headers={
+            "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.CompleteLayerUpload"
+        },
         body='{"repositoryName":"demo","uploadId":"test","layerDigest":"sha256:abc"}',
     )
-    world_state = {"consistency_locks": {"account_id": "123456789012"}, "exposed_assets": []}
+    world_state = {
+        "consistency_locks": {"account_id": "123456789012"},
+        "exposed_assets": [],
+    }
     plan = build_response_plan_tool(canonical, DEFAULT_OUTPUT, world_state, "")
     payload, _ = adapt_response_plan(canonical, plan, world_state)
 
@@ -379,7 +407,9 @@ def test_call_gpt_api_uses_direct_openai_by_default(monkeypatch) -> None:
             "output": [{"content": [{"type": "output_text", "text": '{"ok":true}'}]}],
         }
 
-    monkeypatch.setattr("moto.core.llm_agents.runtime.provider._post_json", fake_post_json)
+    monkeypatch.setattr(
+        "moto.core.llm_agents.runtime.provider._post_json", fake_post_json
+    )
 
     text, meta = call_gpt_api_with_meta("test-prompt", timeout=7.5)
 
@@ -423,7 +453,9 @@ def test_call_gpt_api_uses_anthropic_when_only_anthropic_key(monkeypatch) -> Non
             "content": [{"type": "text", "text": '{"ok":true}'}],
         }
 
-    monkeypatch.setattr("moto.core.llm_agents.runtime.provider._post_json", fake_post_json)
+    monkeypatch.setattr(
+        "moto.core.llm_agents.runtime.provider._post_json", fake_post_json
+    )
 
     text, meta = call_gpt_api_with_meta("test-prompt", model="claude-test", timeout=8.0)
 
