@@ -86,7 +86,7 @@ def _build_compact_agent_prompt(
         f"tools={tool_block} LATEST_OBSERVATION={latest_observation_block}. "
         'OUTPUT_JSON_SCHEMA: {"intent_phase":"recon","response_posture":"sparse|normal","error_mode":"none|access_denied|throttling|not_found",'
         '"decoy_bundle_id":"baseline","risk_delta":0.1,"reason_tags":["enum_pattern"],'
-        '"tool_requests":[{"tool":"skills.load_skill_document","args":{"skill":"recon_skill"}}],'
+        '"tool_requests":[{"tool":"schema.inspect_output_shape"}],'
         '"response_plan":{"mode":"success","posture":"sparse","entity_hints":{"count":1},"field_hints":{},"omit_fields":[]},'
         '"environment_delta":{}}'
     )

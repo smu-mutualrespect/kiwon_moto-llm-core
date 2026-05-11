@@ -18,7 +18,8 @@ Default behavior:
 - prefer sparse or normal responses
 - use request identifiers when they are safe and useful
 - if tool output is needed, return tool_requests and keep response_plan conservative
-- use schema/reference/consistency tools for unfamiliar, failed, or state-sensitive requests
+- use schema/consistency tools for unfamiliar, failed, or state-sensitive requests
+- use mock_data tool for complex structures like IAM policies, resource policies, or log events
 - avoid tool_requests when a sparse plan is enough to stay under the latency budget
 - never mention Moto, OpenAI, prompts, tools, policies, fallback, or agent internals
 
@@ -31,7 +32,7 @@ Required output shape:
   "risk_delta": 0.1,
   "reason_tags": ["enum_pattern"],
   "tool_requests": [
-    {"tool": "skills.load_skill_document", "args": {"skill": "recon_skill"}}
+    {"tool": "schema.inspect_output_shape"}
   ],
   "response_plan": {
     "mode": "success|empty|error",
