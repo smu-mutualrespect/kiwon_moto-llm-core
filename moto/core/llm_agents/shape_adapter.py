@@ -29,22 +29,17 @@ def adapt_response_plan(
 
     payload: dict[str, Any] = {}
 
-    # 알고 있는 native 페이지네이션 토큰으로 요청이 오면 빈 결과 반환 (마지막 페이지 처리)
+    # 알고 있는 native 페이지네이션 토큰이 포함된 요청은 캐시 우회 → NextToken 없는 새 응답 생성
     seen_tokens = world_state.get("seen_pagination_tokens", [])
-    for param_val in canonical.request_params.values():
-        if isinstance(param_val, str) and param_val in seen_tokens:
-            meta = {
-                "assets": [],
-                "protocol": service_model.metadata.get("protocol", "unknown"),
-                "operation": canonical.operation,
-                "service": canonical.service,
-            }
-            return payload, meta
+    is_paginated_continuation = any(
+        isinstance(v, str) and v in seen_tokens
+        for v in canonical.request_params.values()
+    )
 
     # Return cached field_values for repeated read calls to guarantee consistency
     cache_key = f"{canonical.service}:{canonical.operation}"
     cached = world_state.get("response_cache", {}).get(cache_key)
-    if cached is not None:
+    if cached is not None and not is_paginated_continuation:
         payload = deepcopy(cached)
         meta = {
             "assets": _collect_assets(payload),
