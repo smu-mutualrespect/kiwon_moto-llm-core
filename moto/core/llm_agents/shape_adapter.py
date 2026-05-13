@@ -389,7 +389,7 @@ def _generate_scalar_string(
     shape: Any,
     canonical: CanonicalRequest,
     world_state: dict[str, Any],
-) -> str:
+) -> str | None:
     enum = getattr(shape, "enum", None) or []
     if enum:
         preferred = _pick_enum_value(enum)
@@ -488,7 +488,7 @@ def _generate_scalar_string(
     if lowered == "servicerole":
         return f"arn:aws:iam::{account_id}:role/AWSServiceRoleFor{canonical.service.capitalize()}"
     if "nexttoken" in combined or "marker" in combined or "token" in combined:
-        return ""
+        return None
     if "url" in combined:
         return f"mock://{canonical.service}/{canonical.operation.lower()}/{_random_hex(12)}"
     if "message" in combined:
