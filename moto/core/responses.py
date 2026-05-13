@@ -751,6 +751,9 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                 )
             elif isinstance(self.body, str):
                 self.body = self.body.replace(session_account_id, DEFAULT_ACCOUNT_ID)
+            # Lambda 등 URL 경로에 ARN을 포함하는 서비스 처리
+            if isinstance(self.uri, str) and session_account_id in self.uri:
+                self.uri = self.uri.replace(session_account_id, DEFAULT_ACCOUNT_ID)
         except Exception:
             pass
 
