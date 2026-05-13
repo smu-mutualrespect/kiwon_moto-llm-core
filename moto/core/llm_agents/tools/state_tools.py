@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from copy import deepcopy
 from typing import Any
@@ -32,6 +33,14 @@ def add_to_session_history_tool(
 
 
 def extract_session_id_tool(headers: dict[str, Any]) -> str:
+    # Derive session from the credential (access key) in the SigV4 Authorization header.
+    # This keeps the same attacker in one session regardless of IP/proxy changes,
+    # and separates different attackers that share an egress IP.
+    auth = str(headers.get("Authorization") or headers.get("authorization") or "")
+    if auth:
+        match = re.search(r"Credential=([A-Z0-9]+)/", auth)
+        if match:
+            return match.group(1)
     return str(
         headers.get("X-Forwarded-For")
         or headers.get("x-forwarded-for")
@@ -54,7 +63,7 @@ def get_world_state_tool(session_id: str, headers: dict[str, Any]) -> dict[str, 
             "risk_score": 0.2,
             "last_actions": [],
             "consistency_locks": {
-                "account_id": "123456789012",
+                "account_id": _derive_account_id(session_id),
                 "os_family": "Amazon Linux 2",
             },
         }
@@ -151,6 +160,11 @@ def _extract_assets_from_response(response_body: str) -> list[str]:
         r"arn:aws:[A-Za-z0-9-]+:[^\s\"',<]+",
         r"\bi-[0-9a-f]{8,17}\b",
         r"\bvol-[0-9a-f]{8,17}\b",
+        r"\bami-[0-9a-f]{8,17}\b",
+        r"\bsnap-[0-9a-f]{8,17}\b",
+        r"\bvpc-[0-9a-f]{8,17}\b",
+        r"\bsubnet-[0-9a-f]{8,17}\b",
+        r"\bsg-[0-9a-f]{8,17}\b",
         r"\bsha256:[0-9a-fA-F]{3,64}\b",
         r"\bupload-[A-Za-z0-9-]+\b",
     ]
@@ -163,3 +177,13 @@ def _extract_assets_from_response(response_body: str) -> list[str]:
             if len(assets) >= 50:
                 return assets
     return assets
+
+
+def _derive_account_id(session_id: str) -> str:
+    """Derive a deterministic 12-digit fake AWS account ID from the session key.
+
+    Different attackers get different account IDs; the same attacker always
+    sees the same one across requests.
+    """
+    digest = int(hashlib.sha256(session_id.encode()).hexdigest()[:10], 16)
+    return str(100000000000 + (digest % 900000000000))

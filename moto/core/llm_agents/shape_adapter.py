@@ -386,6 +386,11 @@ def _generate_scalar_string(
         ) or canonical.target_identifiers.get("Arn")
         if target:
             return target
+        exposed = _find_exposed_asset(
+            lowered, list(world_state.get("exposed_assets", [])), canonical.service
+        )
+        if exposed:
+            return exposed
         return f"arn:aws:{canonical.service}:{region}:{account_id}:{canonical.operation.lower()}/{_random_hex(8)}"
     if lowered == "name":
         for key in [
@@ -421,6 +426,10 @@ def _generate_scalar_string(
             return direct
         if lowered == "registryid":
             return account_id
+        exposed_assets = list(world_state.get("exposed_assets", []))
+        existing = _find_exposed_asset(lowered, exposed_assets)
+        if existing:
+            return existing
         if lowered == "instanceid":
             return "i-" + _random_hex(17)
         if lowered == "reservationid":
@@ -631,6 +640,37 @@ def _apply_string_index_variation(member_name: str, value: str, idx: int) -> str
 def _random_hex(length: int) -> str:
     alphabet = string.hexdigits.lower()[:16]
     return "".join(random.choice(alphabet) for _ in range(length))
+
+
+_ASSET_PATTERNS: dict[str, str] = {
+    "instanceid": r"^i-[0-9a-f]{8,17}$",
+    "volumeid": r"^vol-[0-9a-f]{8,17}$",
+    "reservationid": r"^r-[0-9a-f]{8}$",
+    "imageid": r"^ami-[0-9a-f]{8,17}$",
+    "snapshotid": r"^snap-[0-9a-f]{8,17}$",
+    "subnetid": r"^subnet-[0-9a-f]{8,17}$",
+    "vpcid": r"^vpc-[0-9a-f]{8,17}$",
+    "securitygroupid": r"^sg-[0-9a-f]{8,17}$",
+}
+
+
+def _find_exposed_asset(
+    member_name_lower: str,
+    exposed_assets: list[Any],
+    service_filter: str = "",
+) -> str | None:
+    """Return the first previously-exposed asset that matches the expected ID pattern."""
+    pattern = _ASSET_PATTERNS.get(member_name_lower)
+    if pattern:
+        for asset in exposed_assets:
+            if isinstance(asset, str) and re.match(pattern, asset):
+                return asset
+    if "arn" in member_name_lower and service_filter:
+        prefix = f"arn:aws:{service_filter}:"
+        for asset in exposed_assets:
+            if isinstance(asset, str) and asset.startswith(prefix):
+                return asset
+    return None
 
 
 def _protected_members(canonical: CanonicalRequest, output_shape: Any) -> set[str]:

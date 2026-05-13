@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from moto.core.utils import get_service_model
-
 from ..tools.request_tools import CanonicalRequest
 from .mock_data import get_mock_template
 from .schema import build_full_schema
@@ -69,7 +67,8 @@ def _execute_one(
             "risk_score": world_state.get("risk_score", 0.2),
             "recent_actions": list(world_state.get("last_actions", []))[-5:],
             "request_identifiers": canonical.target_identifiers,
-            "guidance": "reuse request identifiers when safe; keep ARN account and region aligned with locks",
+            "exposed_assets": list(world_state.get("exposed_assets", []))[-10:],
+            "guidance": "reuse exposed_assets and request_identifiers when safe; keep ARN account and region aligned with locks",
         }
     if name == "mock_data.get_mock_template":
         category = str(args.get("category") or "iam_policy")
