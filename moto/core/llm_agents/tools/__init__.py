@@ -8,6 +8,7 @@ from .state_tools import (
     get_world_state_tool,
     has_any_agent_response,
     has_cached_agent_response_tool,
+    has_session_history,
     record_native_interaction_tool,
     update_world_state_tool,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "get_world_state_tool",
     "has_any_agent_response",
     "has_cached_agent_response_tool",
+    "has_session_history",
     "normalize_request_tool",
     "record_native_interaction_tool",
     "serialize_response_tool",

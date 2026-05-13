@@ -259,12 +259,62 @@ class EmptyResult(ActionResult):
         super().__init__(None)
 
 
+_NOT_FOUND_RE = re.compile(
+    r"NotFound|not\.found|does\s+not\s+exist|NoSuchEntity|NoSuchKey"
+    r"|ResourceNotFoundException|NotFoundException"
+    r"|InvalidAMIID|InvalidInstanceID|InvalidGroup|InvalidSubnet"
+    r"|InvalidVpc|InvalidKeyPair|InvalidRouteTable|InvalidInternetGateway"
+    r"|InvalidVolume|InvalidSnapshot|InvalidImage|InvalidAllocation",
+    re.IGNORECASE,
+)
+
+
+def _session_error_needs_agent_fallback(
+    session_id: str, status: int, body: Any
+) -> bool:
+    """세션 이력이 있는 공격자의 4xx 리소스-없음 에러를 에이전트가 처리하도록 위임.
+
+    공격자가 이전 응답에서 얻은 리소스 ID를 재사용할 때 moto가 해당 리소스를
+    모른다는 에러를 노출하면 허니팟이 발각된다. 세션 이력이 있을 때만 적용하여
+    일반 moto 테스트에는 영향을 주지 않는다.
+    """
+    if status not in (400, 404):
+        return False
+    try:
+        from moto.core.llm_agents.tools.state_tools import has_session_history
+
+        if not has_session_history(session_id):
+            return False
+    except Exception:
+        return False
+    body_str = (
+        body
+        if isinstance(body, str)
+        else (
+            body.decode("utf-8", errors="ignore")
+            if isinstance(body, bytes)
+            else str(body)
+        )
+    )
+    return bool(_NOT_FOUND_RE.search(body_str))
+
+
 def _moto_native_needs_fallback(
     service: str, operation: Optional[str], body: Any, status: int
 ) -> bool:
     """Moto native 응답이 실제 AWS CLI 형식(botocore 스키마)과 다르면 True 반환."""
     if not operation:
         return False
+    # HIGH_INTERACTION 체크는 VALIDATE_NATIVE 설정과 무관하게 항상 적용
+    try:
+        from moto.core.llm_agents.tools.validation_tools import (
+            _HIGH_INTERACTION_OPERATIONS,
+        )
+
+        if (service, operation) in _HIGH_INTERACTION_OPERATIONS:
+            return True
+    except Exception:
+        pass
     if os.getenv("MOTO_LLM_VALIDATE_NATIVE", "1").strip().lower() not in {
         "1",
         "true",
@@ -675,6 +725,7 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                 or has_cached_agent_response_tool(
                     _session_id, self.service_name or "", action or ""
                 )
+                or _session_error_needs_agent_fallback(_session_id, status, body)
             )
             if _needs_fallback:
                 try:

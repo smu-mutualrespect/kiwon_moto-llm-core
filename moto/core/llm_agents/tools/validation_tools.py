@@ -36,12 +36,36 @@ _HONEYPOT_CORE_MEMBERS: dict[tuple[str, str], list[str]] = {
 }
 
 # 내용과 무관하게 항상 Agent가 응답해야 하는 고위험·고상호작용 명령
+# MOTO_LLM_VALIDATE_NATIVE=0 환경에서도 반드시 적용되어야 하므로
+# responses._moto_native_needs_fallback 에서 VALIDATE_NATIVE gate 이전에 검사한다.
 _HIGH_INTERACTION_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
     {
+        # SSM / ECS — interactive shell
         ("ssm", "StartSession"),
         ("ssm", "ResumeSession"),
         ("ssm", "TerminateSession"),
         ("ecs", "ExecuteCommand"),
+        # EC2 — 인스턴스 라이프사이클 (공격자가 즉시 결과를 확인하는 작업)
+        ("ec2", "RunInstances"),
+        ("ec2", "StartInstances"),
+        ("ec2", "StopInstances"),
+        ("ec2", "TerminateInstances"),
+        ("ec2", "RebootInstances"),
+        ("ec2", "CreateKeyPair"),
+        ("ec2", "CreateSecurityGroup"),
+        ("ec2", "AuthorizeSecurityGroupIngress"),
+        ("ec2", "AuthorizeSecurityGroupEgress"),
+        # IAM — 권한 상승
+        ("iam", "CreateUser"),
+        ("iam", "CreateAccessKey"),
+        ("iam", "AttachUserPolicy"),
+        ("iam", "AttachRolePolicy"),
+        ("iam", "PutUserPolicy"),
+        ("iam", "PutRolePolicy"),
+        ("iam", "CreateRole"),
+        # Lambda — 코드 실행
+        ("lambda", "InvokeFunction"),
+        ("lambda", "InvokeWithResponseStream"),
     }
 )
 

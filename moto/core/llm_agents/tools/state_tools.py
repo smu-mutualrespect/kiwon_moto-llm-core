@@ -22,6 +22,12 @@ def has_any_agent_response(session_id: str) -> bool:
     return bool(state.get("agent_responses"))
 
 
+def has_session_history(session_id: str) -> bool:
+    """True if this session has made any prior request (agent or moto-native)."""
+    with _lock:
+        return session_id in _session_state
+
+
 def has_cached_agent_response_tool(
     session_id: str, service: str, operation: str
 ) -> bool:
