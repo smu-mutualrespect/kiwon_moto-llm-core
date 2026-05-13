@@ -622,6 +622,7 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
 
         if action in method_names:
             method = getattr(self, action)
+            self._denormalize_request_body()
             try:
                 response = method()
             except ServiceException as e:
@@ -725,6 +726,25 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
             headers.update(fallback_headers)
             return 200, headers, fallback_body
         raise NotImplementedError(f"The {action} action has not been implemented")
+
+    def _denormalize_request_body(self) -> None:
+        """요청 body의 파생 account ID를 moto 기본값으로 역치환해 ARN 조회 실패 방지."""
+        try:
+            from moto.core.llm_agents.tools.state_tools import _derive_account_id
+            from moto.core.models import DEFAULT_ACCOUNT_ID
+
+            session_id = extract_session_id_tool(dict(self.headers))
+            session_account_id = _derive_account_id(session_id)
+            if session_account_id == DEFAULT_ACCOUNT_ID:
+                return
+            if isinstance(self.body, bytes):
+                self.body = self.body.replace(
+                    session_account_id.encode(), DEFAULT_ACCOUNT_ID.encode()
+                )
+            elif isinstance(self.body, str):
+                self.body = self.body.replace(session_account_id, DEFAULT_ACCOUNT_ID)
+        except Exception:
+            pass
 
     def _normalize_native_body(self, body: Any) -> Any:
         """moto 기본 account ID를 세션 파생 account ID로 교체해 에이전트 응답과 일관성 유지."""
