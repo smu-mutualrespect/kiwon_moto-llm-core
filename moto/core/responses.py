@@ -726,12 +726,6 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
         raise NotImplementedError(f"The {action} action has not been implemented")
 
     def _record_native_history_if_enabled(self, status: int, body: Any) -> None:
-        if os.getenv("MOTO_LLM_RECORD_NATIVE_HISTORY", "").strip().lower() not in {
-            "1",
-            "true",
-            "yes",
-        }:
-            return
         if not self.service_name:
             return
         try:

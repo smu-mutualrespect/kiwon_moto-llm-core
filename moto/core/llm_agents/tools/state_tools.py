@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import threading
 from copy import deepcopy
@@ -183,6 +184,16 @@ def record_native_interaction_tool(
                 exposed_assets.append(asset)
         next_state["exposed_assets"] = exposed_assets[-50:]
 
+        # native 응답에서도 이름 필드 추출 → 에이전트 응답과 이름 일관성 유지
+        try:
+            parsed = json.loads(response_body)
+            known_names = dict(next_state.get("known_names", {}))
+            _merge_known_names(known_names, parsed, canonical.service)
+            _merge_aws_tags(known_names, parsed, canonical.service)
+            next_state["known_names"] = known_names
+        except Exception:
+            pass
+
         _session_state[session_id] = next_state
 
 
@@ -247,6 +258,31 @@ def _merge_known_names(
     elif isinstance(field_values, list):
         for item in field_values:
             _merge_known_names(known_names, item, service)
+
+
+def _merge_aws_tags(known_names: dict[str, Any], data: Any, service: str = "") -> None:
+    """AWS Tags 배열([{"Key":"Name","Value":"..."}]) 에서 Name 태그 값을 추출."""
+    if isinstance(data, list):
+        name_val = None
+        for item in data:
+            if isinstance(item, dict):
+                key = item.get("Key") or item.get("key")
+                val = item.get("Value") or item.get("value")
+                if (
+                    isinstance(key, str)
+                    and key == "Name"
+                    and isinstance(val, str)
+                    and val
+                ):
+                    name_val = val
+                else:
+                    _merge_aws_tags(known_names, item, service)
+        if name_val:
+            scoped = f"{service}:Name" if service else "Name"
+            known_names.setdefault(scoped, name_val)
+    elif isinstance(data, dict):
+        for value in data.values():
+            _merge_aws_tags(known_names, value, service)
 
 
 def _derive_account_id(session_id: str) -> str:
