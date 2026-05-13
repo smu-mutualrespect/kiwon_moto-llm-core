@@ -75,6 +75,7 @@ def get_world_state_tool(session_id: str, headers: dict[str, Any]) -> dict[str, 
                 },
                 "known_names": {},
                 "response_cache": {},
+                "seen_pagination_tokens": [],
                 "session_start_time": datetime.now(timezone.utc).strftime(
                     "%Y-%m-%dT%H:%M:%SZ"
                 ),
@@ -185,14 +186,18 @@ def record_native_interaction_tool(
         next_state["exposed_assets"] = exposed_assets[-50:]
 
         # native 응답에서도 이름 필드 추출 → 에이전트 응답과 이름 일관성 유지
+        known_names = dict(next_state.get("known_names", {}))
         try:
             parsed = json.loads(response_body)
-            known_names = dict(next_state.get("known_names", {}))
             _merge_known_names(known_names, parsed, canonical.service)
             _merge_aws_tags(known_names, parsed, canonical.service)
-            next_state["known_names"] = known_names
+            # native 응답의 NextToken을 기록 → 에이전트가 해당 토큰 수신 시 빈 결과 반환
+            _record_pagination_tokens(next_state, parsed)
         except Exception:
-            pass
+            # JSON 파싱 실패 시 XML로 재시도 (EC2/S3 등 XML 프로토콜 서비스)
+            _merge_known_names_from_xml(known_names, response_body, canonical.service)
+            _record_pagination_tokens_from_xml(next_state, response_body)
+        next_state["known_names"] = known_names
 
         _session_state[session_id] = next_state
 
@@ -258,6 +263,76 @@ def _merge_known_names(
     elif isinstance(field_values, list):
         for item in field_values:
             _merge_known_names(known_names, item, service)
+
+
+_PAGINATION_KEYS = {"nexttoken", "marker", "nextpage", "nextmarker", "paginationtoken"}
+
+
+def _record_pagination_tokens(state: dict[str, Any], parsed: Any) -> None:
+    """JSON 응답에서 페이지네이션 토큰 값을 세션에 기록."""
+    if not isinstance(parsed, dict):
+        return
+    tokens: list[str] = list(state.get("seen_pagination_tokens", []))
+    for key, value in parsed.items():
+        if key.lower() in _PAGINATION_KEYS and isinstance(value, str) and value:
+            if value not in tokens:
+                tokens.append(value)
+    state["seen_pagination_tokens"] = tokens[-50:]
+
+
+def _record_pagination_tokens_from_xml(state: dict[str, Any], xml_body: str) -> None:
+    """XML 응답에서 페이지네이션 토큰 값을 세션에 기록."""
+    import xml.etree.ElementTree as ET
+
+    try:
+        root = ET.fromstring(xml_body.strip())
+    except Exception:
+        return
+    tokens: list[str] = list(state.get("seen_pagination_tokens", []))
+    for el in root.iter():
+        local = el.tag.split("}")[-1].lower()
+        if local in _PAGINATION_KEYS and el.text and el.text.strip():
+            val = el.text.strip()
+            if val not in tokens:
+                tokens.append(val)
+    state["seen_pagination_tokens"] = tokens[-50:]
+
+
+def _merge_known_names_from_xml(
+    known_names: dict[str, Any], xml_body: str, service: str = ""
+) -> None:
+    """EC2/S3 등 XML 응답에서 Name 필드와 AWS tagSet 태그를 known_names에 추출."""
+    import xml.etree.ElementTree as ET
+
+    try:
+        root = ET.fromstring(xml_body.strip())
+    except Exception:
+        return
+
+    # <value> 바로 앞 형제가 <key>Name</key> 인 tagSet 패턴 처리
+    for item in root.iter():
+        children = list(item)
+        for i, child in enumerate(children):
+            tag_local = child.tag.split("}")[-1].lower()
+            if tag_local == "key" and child.text and child.text.strip() == "Name":
+                if i + 1 < len(children):
+                    val_el = children[i + 1]
+                    val_local = val_el.tag.split("}")[-1].lower()
+                    if val_local == "value" and val_el.text and val_el.text.strip():
+                        scoped = f"{service}:Name" if service else "Name"
+                        known_names.setdefault(scoped, val_el.text.strip())
+
+    # 직접 <Name> 또는 <*name> 요소 처리
+    for el in root.iter():
+        local = el.tag.split("}")[-1]
+        lowered = local.lower()
+        if (
+            (lowered == "name" or lowered.endswith("name"))
+            and el.text
+            and el.text.strip()
+        ):
+            scoped = f"{service}:{local}" if service else local
+            known_names.setdefault(scoped, el.text.strip())
 
 
 def _merge_aws_tags(known_names: dict[str, Any], data: Any, service: str = "") -> None:

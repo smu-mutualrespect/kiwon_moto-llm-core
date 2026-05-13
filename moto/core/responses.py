@@ -683,6 +683,7 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                 except Exception:
                     pass  # fallback도 실패하면 원본 Moto 응답 유지
 
+            body = self._normalize_native_body(body)
             self._record_native_history_if_enabled(status, body)
 
             return status, headers, body
@@ -724,6 +725,26 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
             headers.update(fallback_headers)
             return 200, headers, fallback_body
         raise NotImplementedError(f"The {action} action has not been implemented")
+
+    def _normalize_native_body(self, body: Any) -> Any:
+        """moto 기본 account ID를 세션 파생 account ID로 교체해 에이전트 응답과 일관성 유지."""
+        try:
+            from moto.core.llm_agents.tools.state_tools import _derive_account_id
+            from moto.core.models import DEFAULT_ACCOUNT_ID
+
+            session_id = extract_session_id_tool(dict(self.headers))
+            session_account_id = _derive_account_id(session_id)
+            if session_account_id == DEFAULT_ACCOUNT_ID:
+                return body
+            if isinstance(body, bytes):
+                return body.replace(
+                    DEFAULT_ACCOUNT_ID.encode(), session_account_id.encode()
+                )
+            if isinstance(body, str):
+                return body.replace(DEFAULT_ACCOUNT_ID, session_account_id)
+        except Exception:
+            pass
+        return body
 
     def _record_native_history_if_enabled(self, status: int, body: Any) -> None:
         if not self.service_name:

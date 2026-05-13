@@ -29,6 +29,18 @@ def adapt_response_plan(
 
     payload: dict[str, Any] = {}
 
+    # 알고 있는 native 페이지네이션 토큰으로 요청이 오면 빈 결과 반환 (마지막 페이지 처리)
+    seen_tokens = world_state.get("seen_pagination_tokens", [])
+    for param_val in canonical.request_params.values():
+        if isinstance(param_val, str) and param_val in seen_tokens:
+            meta = {
+                "assets": [],
+                "protocol": service_model.metadata.get("protocol", "unknown"),
+                "operation": canonical.operation,
+                "service": canonical.service,
+            }
+            return payload, meta
+
     # Return cached field_values for repeated read calls to guarantee consistency
     cache_key = f"{canonical.service}:{canonical.operation}"
     cached = world_state.get("response_cache", {}).get(cache_key)
