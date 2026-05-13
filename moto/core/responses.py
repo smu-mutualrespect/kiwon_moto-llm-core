@@ -268,24 +268,22 @@ _NOT_FOUND_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 에러 메시지 내 AWS 리소스 ID 패턴 (따옴표로 감싸진 형태)
+_RESOURCE_ID_IN_ERROR_RE = re.compile(
+    r"'((?:sg|i|ami|subnet|vpc|vol|key|rtb|igw|nat|eni|acl|snap)-[0-9a-f]{6,17})'"
+)
+
 
 def _session_error_needs_agent_fallback(
     session_id: str, status: int, body: Any
 ) -> bool:
-    """세션 이력이 있는 공격자의 4xx 리소스-없음 에러를 에이전트가 처리하도록 위임.
+    """공격자가 이전 응답에서 받은 리소스 ID로 후속 호출 시 발생하는 에러를 agent가 처리.
 
-    공격자가 이전 응답에서 얻은 리소스 ID를 재사용할 때 moto가 해당 리소스를
-    모른다는 에러를 노출하면 허니팟이 발각된다. 세션 이력이 있을 때만 적용하여
-    일반 moto 테스트에는 영향을 주지 않는다.
+    에러 메시지에서 리소스 ID를 추출해 세션 이력에 그 ID가 실제로 포함된 적 있을 때만
+    인터셉트한다. 테스트에서 의도적으로 가짜 ID를 쓰는 경우(이력에 없음)는 에러가 그대로
+    전달되어 기존 moto 테스트가 영향을 받지 않는다.
     """
     if status not in (400, 404):
-        return False
-    try:
-        from moto.core.llm_agents.tools.state_tools import has_session_history
-
-        if not has_session_history(session_id):
-            return False
-    except Exception:
         return False
     body_str = (
         body
@@ -296,7 +294,22 @@ def _session_error_needs_agent_fallback(
             else str(body)
         )
     )
-    return bool(_NOT_FOUND_RE.search(body_str))
+    if not _NOT_FOUND_RE.search(body_str):
+        return False
+    # 에러 본문에서 리소스 ID 추출
+    id_match = _RESOURCE_ID_IN_ERROR_RE.search(body_str)
+    if not id_match:
+        return False
+    resource_id = id_match.group(1)
+    # 해당 ID가 이 세션의 이전 응답에 포함된 적 있을 때만 인터셉트
+    try:
+        from moto.core.llm_agents.tools.state_tools import _lock, _session_storage
+
+        with _lock:
+            history = list(_session_storage.get(session_id, []))
+    except Exception:
+        return False
+    return any(resource_id in item.get("response", "") for item in history)
 
 
 def _moto_native_needs_fallback(
@@ -833,6 +846,11 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
         return body
 
     def _record_native_history_if_enabled(self, status: int, body: Any) -> None:
+        # 에러 응답(4xx/5xx)은 세션 이력에 기록하지 않는다.
+        # 에러 메시지 안의 리소스 ID가 후속 _session_error_needs_agent_fallback 검사에서
+        # "이전에 반환된 ID"로 오인되는 것을 방지한다.
+        if int(status) >= 400:
+            return
         if not self.service_name:
             return
         try:

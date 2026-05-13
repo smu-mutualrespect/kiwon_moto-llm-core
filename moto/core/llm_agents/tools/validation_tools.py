@@ -45,27 +45,6 @@ _HIGH_INTERACTION_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
         ("ssm", "ResumeSession"),
         ("ssm", "TerminateSession"),
         ("ecs", "ExecuteCommand"),
-        # EC2 — 인스턴스 라이프사이클 (공격자가 즉시 결과를 확인하는 작업)
-        ("ec2", "RunInstances"),
-        ("ec2", "StartInstances"),
-        ("ec2", "StopInstances"),
-        ("ec2", "TerminateInstances"),
-        ("ec2", "RebootInstances"),
-        ("ec2", "CreateKeyPair"),
-        ("ec2", "CreateSecurityGroup"),
-        ("ec2", "AuthorizeSecurityGroupIngress"),
-        ("ec2", "AuthorizeSecurityGroupEgress"),
-        # IAM — 권한 상승
-        ("iam", "CreateUser"),
-        ("iam", "CreateAccessKey"),
-        ("iam", "AttachUserPolicy"),
-        ("iam", "AttachRolePolicy"),
-        ("iam", "PutUserPolicy"),
-        ("iam", "PutRolePolicy"),
-        ("iam", "CreateRole"),
-        # Lambda — 코드 실행
-        ("lambda", "InvokeFunction"),
-        ("lambda", "InvokeWithResponseStream"),
     }
 )
 
