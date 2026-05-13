@@ -6,6 +6,7 @@ from .state_tools import (
     extract_session_id_tool,
     get_session_history_tool,
     get_world_state_tool,
+    has_cached_agent_response_tool,
     record_native_interaction_tool,
     update_world_state_tool,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "extract_session_id_tool",
     "get_session_history_tool",
     "get_world_state_tool",
+    "has_cached_agent_response_tool",
     "normalize_request_tool",
     "record_native_interaction_tool",
     "serialize_response_tool",

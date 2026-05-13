@@ -15,6 +15,15 @@ _session_state: dict[str, dict[str, Any]] = {}
 _lock = threading.RLock()
 
 
+def has_cached_agent_response_tool(
+    session_id: str, service: str, operation: str
+) -> bool:
+    """에이전트가 이 operation을 이전에 응답한 적 있는지 확인 (response_cache 기반)."""
+    with _lock:
+        state = _session_state.get(session_id, {})
+    return f"{service}:{operation}" in state.get("response_cache", {})
+
+
 def get_session_history_tool(session_id: str) -> str:
     with _lock:
         history = list(_session_storage.get(session_id, []))

@@ -30,6 +30,7 @@ from moto.core.exceptions import ServiceException
 from moto.core.llm_agents import handle_aws_request
 from moto.core.llm_agents.tools import (
     extract_session_id_tool,
+    has_cached_agent_response_tool,
     normalize_request_tool,
     record_native_interaction_tool,
 )
@@ -664,11 +665,18 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
 
             headers, body = self._enrich_response(headers, body)
 
-            # Moto native 응답을 실제 AWS CLI 형식(botocore 스키마)과 비교
-            # 형식이 다르거나 필수 필드가 빠지면 Agent가 대신 응답
-            if self.service_name and _moto_native_needs_fallback(
-                self.service_name, self._get_action(), body, status
-            ):
+            # Moto native 응답을 실제 AWS CLI 형식(botocore 스키마)과 비교하거나,
+            # Agent가 이미 이 operation에 응답한 적 있으면 캐시된 응답으로 일관성 유지
+            _session_id = extract_session_id_tool(dict(self.headers))
+            _needs_fallback = self.service_name and (
+                _moto_native_needs_fallback(
+                    self.service_name, self._get_action(), body, status
+                )
+                or has_cached_agent_response_tool(
+                    _session_id, self.service_name or "", action or ""
+                )
+            )
+            if _needs_fallback:
                 try:
                     fallback_text = handle_aws_request(
                         service=self.service_name,
