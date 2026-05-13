@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import re
 import string
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,8 +25,23 @@ def adapt_response_plan(
     service_model = get_service_model(canonical.service)
     operation_model = service_model.operation_model(canonical.operation)
     output_shape = operation_model.output_shape
+    protocol = service_model.metadata.get("protocol", "unknown")
 
     payload: dict[str, Any] = {}
+
+    # Return cached field_values for repeated read calls to guarantee consistency
+    cache_key = f"{canonical.service}:{canonical.operation}"
+    cached = world_state.get("response_cache", {}).get(cache_key)
+    if cached is not None:
+        payload = deepcopy(cached)
+        meta = {
+            "assets": _collect_assets(payload),
+            "protocol": protocol,
+            "operation": canonical.operation,
+            "service": canonical.service,
+        }
+        return payload, meta
+
     if output_shape is not None:
         assert output_shape.type_name == "structure"
         protected_members = _protected_members(canonical, output_shape)
@@ -41,7 +58,7 @@ def adapt_response_plan(
     assets = _collect_assets(payload)
     meta = {
         "assets": assets,
-        "protocol": service_model.metadata.get("protocol", "unknown"),
+        "protocol": protocol,
         "operation": canonical.operation,
         "service": canonical.service,
     }
@@ -380,11 +397,12 @@ def _generate_scalar_string(
     shape_name = getattr(shape, "name", "")
     combined = f"{shape_name} {member_name}".lower()
 
-    # Reuse previously seen name-type values from this session
+    # Reuse previously seen name-type values, scoped by service to prevent cross-service bleed
     known_names = world_state.get("known_names", {})
     if lowered.endswith("name") or lowered == "name":
-        if member_name in known_names:
-            return known_names[member_name]
+        scoped_key = f"{canonical.service}:{member_name}"
+        if scoped_key in known_names:
+            return known_names[scoped_key]
 
     if "arn" in combined:
         target = canonical.target_identifiers.get(
@@ -414,7 +432,8 @@ def _generate_scalar_string(
         if "SecretId" in canonical.target_identifiers:
             return canonical.target_identifiers["SecretId"].split("/")[-1]
         if canonical.service == "ssm":
-            return f"ip-10-42-{random.randint(0, 9)}-{random.randint(10, 250)}"
+            seed = _get_resource_seed(canonical, world_state)
+            return f"ip-10-42-{_det_int(seed, 'name_a', 10)}-{_det_int(seed, 'name_b', 240) + 10}"
         return f"{canonical.service}-{canonical.operation.lower()}"
     if "digest" in combined:
         return canonical.target_identifiers.get(
@@ -489,7 +508,8 @@ def _generate_scalar_string(
     if lowered == "region":
         return region
     if lowered == "ipaddress":
-        return f"10.42.{random.randint(0, 9)}.{random.randint(10, 250)}"
+        seed = _get_resource_seed(canonical, world_state)
+        return f"10.42.{_det_int(seed, 'ip_a', 10)}.{_det_int(seed, 'ip_b', 240) + 10}"
     if lowered == "iamrole":
         return "ReadOnlyOpsRole"
     if lowered == "detailedstatus":
@@ -497,7 +517,8 @@ def _generate_scalar_string(
     if lowered == "associationstatus":
         return "Success"
     if lowered == "computername":
-        return f"ip-10-42-{random.randint(0, 9)}-{random.randint(10, 250)}"
+        seed = _get_resource_seed(canonical, world_state)
+        return f"ip-10-42-{_det_int(seed, 'comp_a', 10)}-{_det_int(seed, 'comp_b', 240) + 10}"
     if lowered == "backuprulecron":
         return "cron(0 3 * * ? *)"
     if lowered == "backupruletimezone":
@@ -529,7 +550,10 @@ def _generate_scalar_string(
     if "availabilityzone" in combined:
         return f"{region}a"
     if "privateip" in combined:
-        return f"10.42.{random.randint(0, 9)}.{random.randint(10, 250)}"
+        seed = _get_resource_seed(canonical, world_state)
+        return (
+            f"10.42.{_det_int(seed, 'pip_a', 10)}.{_det_int(seed, 'pip_b', 240) + 10}"
+        )
     if "instancetype" in combined:
         return "t3.medium"
     if "state" in combined:
@@ -649,6 +673,22 @@ def _apply_string_index_variation(member_name: str, value: str, idx: int) -> str
 def _random_hex(length: int) -> str:
     alphabet = string.hexdigits.lower()[:16]
     return "".join(random.choice(alphabet) for _ in range(length))
+
+
+def _get_resource_seed(canonical: CanonicalRequest, world_state: dict[str, Any]) -> str:
+    """Return a stable seed string tied to the primary resource being queried."""
+    for value in canonical.target_identifiers.values():
+        if isinstance(value, str) and re.match(r"^i-[0-9a-f]{8,17}$", value):
+            return value
+    for asset in world_state.get("exposed_assets", []):
+        if isinstance(asset, str) and re.match(r"^i-[0-9a-f]{8,17}$", asset):
+            return asset
+    return str(world_state.get("consistency_locks", {}).get("account_id", "default"))
+
+
+def _det_int(seed: str, field: str, max_val: int) -> int:
+    """Derive a deterministic integer from a seed + field tag."""
+    return int(hashlib.sha256(f"{seed}:{field}".encode()).hexdigest()[:8], 16) % max_val
 
 
 _ASSET_PATTERNS: dict[str, str] = {

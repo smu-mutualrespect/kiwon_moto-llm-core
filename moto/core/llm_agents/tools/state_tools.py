@@ -73,6 +73,7 @@ def get_world_state_tool(session_id: str, headers: dict[str, Any]) -> dict[str, 
                     "os_family": "Amazon Linux 2",
                 },
                 "known_names": {},
+                "response_cache": {},
                 "session_start_time": datetime.now(timezone.utc).strftime(
                     "%Y-%m-%dT%H:%M:%SZ"
                 ),
@@ -119,11 +120,19 @@ def update_world_state_tool(
             exposed_assets.append(asset)
     next_state["exposed_assets"] = exposed_assets
 
-    # Store name-type field values for cross-call consistency
+    # Store name-type field values for cross-call consistency (scoped by service)
     if field_values:
         known_names = dict(next_state.get("known_names", {}))
-        _merge_known_names(known_names, field_values)
+        _merge_known_names(known_names, field_values, canonical.service)
         next_state["known_names"] = known_names
+
+    # Cache full field_values for read operations so repeated calls return identical results
+    if field_values and _should_cache_operation(canonical.operation):
+        response_cache = dict(next_state.get("response_cache", {}))
+        cache_key = f"{canonical.service}:{canonical.operation}"
+        if cache_key not in response_cache:
+            response_cache[cache_key] = deepcopy(field_values)
+        next_state["response_cache"] = response_cache
 
     with _lock:
         _session_state[session_id] = next_state
@@ -201,12 +210,26 @@ def _extract_assets_from_response(response_body: str) -> list[str]:
     return assets
 
 
-_NAME_SUFFIXES = ("name", "Name")
 _SKIP_NAME_KEYS = {"nexttoken", "marker", "requestid", "token"}
+_CACHE_OPERATION_PREFIXES = (
+    "get",
+    "describe",
+    "list",
+    "batch",
+    "query",
+    "head",
+    "scan",
+)
 
 
-def _merge_known_names(known_names: dict[str, Any], field_values: Any) -> None:
-    """Recursively extract *Name string fields from field_values into known_names."""
+def _should_cache_operation(operation: str) -> bool:
+    return operation.lower().startswith(_CACHE_OPERATION_PREFIXES)
+
+
+def _merge_known_names(
+    known_names: dict[str, Any], field_values: Any, service: str = ""
+) -> None:
+    """Recursively extract *Name string fields into known_names, scoped by service."""
     if isinstance(field_values, dict):
         for key, value in field_values.items():
             lowered = key.lower()
@@ -217,12 +240,13 @@ def _merge_known_names(known_names: dict[str, Any], field_values: Any) -> None:
                 and value
                 and (lowered == "name" or lowered.endswith("name"))
             ):
-                known_names.setdefault(key, value)
+                scoped = f"{service}:{key}" if service else key
+                known_names.setdefault(scoped, value)
             else:
-                _merge_known_names(known_names, value)
+                _merge_known_names(known_names, value, service)
     elif isinstance(field_values, list):
         for item in field_values:
-            _merge_known_names(known_names, item)
+            _merge_known_names(known_names, item, service)
 
 
 def _derive_account_id(session_id: str) -> str:
