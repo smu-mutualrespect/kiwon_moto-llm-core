@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import random
 import re
-import string
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
@@ -37,8 +35,7 @@ def adapt_response_plan(
     )
 
     # Return cached field_values for repeated read calls to guarantee consistency
-    cache_key = f"{canonical.service}:{canonical.operation}"
-    cached = world_state.get("response_cache", {}).get(cache_key)
+    cached = world_state.get("response_cache", {}).get(_cache_key(canonical))
     if cached is not None and not is_paginated_continuation:
         payload = deepcopy(cached)
         meta = {
@@ -396,6 +393,7 @@ def _generate_scalar_string(
         if preferred:
             return preferred
 
+    seed = _get_resource_seed(canonical, world_state)
     account_id = str(
         world_state.get("consistency_locks", {}).get("account_id", "123456789012")
     )
@@ -422,7 +420,7 @@ def _generate_scalar_string(
         )
         if exposed:
             return exposed
-        return f"arn:aws:{canonical.service}:{region}:{account_id}:{canonical.operation.lower()}/{_random_hex(8)}"
+        return f"arn:aws:{canonical.service}:{region}:{account_id}:{canonical.operation.lower()}/{_det_hex(seed, 'arn_suffix', 8)}"
     if lowered == "name":
         for key in [
             "name",
@@ -439,19 +437,18 @@ def _generate_scalar_string(
         if "SecretId" in canonical.target_identifiers:
             return canonical.target_identifiers["SecretId"].split("/")[-1]
         if canonical.service == "ssm":
-            seed = _get_resource_seed(canonical, world_state)
             return f"ip-10-42-{_det_int(seed, 'name_a', 10)}-{_det_int(seed, 'name_b', 240) + 10}"
         return f"{canonical.service}-{canonical.operation.lower()}"
     if "digest" in combined:
         return canonical.target_identifiers.get(
-            member_name, "sha256:" + _random_hex(64)
+            member_name, "sha256:" + _det_hex(seed, "digest", 64)
         )
     if "uploadid" in combined or "upload id" in combined:
-        return "upload-" + _random_hex(12)
+        return "upload-" + _det_hex(seed, "uploadid", 12)
     if "jobid" in combined or "job id" in combined:
-        return "job-" + _random_hex(10)
+        return "job-" + _det_hex(seed, "jobid", 10)
     if "requestid" in combined or "request id" in combined:
-        return "req-" + _random_hex(16)
+        return "req-" + _det_hex(seed, "requestid", 16)
     if lowered.endswith("id"):
         direct = canonical.target_identifiers.get(member_name)
         if direct:
@@ -463,12 +460,12 @@ def _generate_scalar_string(
         if existing:
             return existing
         if lowered == "instanceid":
-            return "i-" + _random_hex(17)
+            return "i-" + _det_hex(seed, "instanceid", 17)
         if lowered == "reservationid":
-            return "r-" + _random_hex(8)
+            return "r-" + _det_hex(seed, "reservationid", 8)
         if lowered == "imageid":
-            return "ami-" + _random_hex(8)
-        return f"{canonical.service}-{_random_hex(8)}"
+            return "ami-" + _det_hex(seed, "imageid", 8)
+        return f"{canonical.service}-{_det_hex(seed, 'generic_id', 8)}"
     if "repository" in combined and "name" in combined:
         return canonical.target_identifiers.get(member_name, "demo")
     if "secret" in combined and "id" in combined:
@@ -484,13 +481,13 @@ def _generate_scalar_string(
     if "servicusername" in combined or "service username" in combined:
         return "victim-admin-at-0"
     if lowered == "servicecredentialalias":
-        return "codecommit-" + _random_hex(6)
+        return "codecommit-" + _det_hex(seed, "credentialalias", 6)
     if lowered == "servicerole":
         return f"arn:aws:iam::{account_id}:role/AWSServiceRoleFor{canonical.service.capitalize()}"
     if "nexttoken" in combined or "marker" in combined or "token" in combined:
         return None
     if "url" in combined:
-        return f"mock://{canonical.service}/{canonical.operation.lower()}/{_random_hex(12)}"
+        return f"mock://{canonical.service}/{canonical.operation.lower()}/{_det_hex(seed, 'url_suffix', 12)}"
     if "message" in combined:
         return json.dumps(
             {
@@ -515,7 +512,6 @@ def _generate_scalar_string(
     if lowered == "region":
         return region
     if lowered == "ipaddress":
-        seed = _get_resource_seed(canonical, world_state)
         return f"10.42.{_det_int(seed, 'ip_a', 10)}.{_det_int(seed, 'ip_b', 240) + 10}"
     if lowered == "iamrole":
         return "ReadOnlyOpsRole"
@@ -524,7 +520,6 @@ def _generate_scalar_string(
     if lowered == "associationstatus":
         return "Success"
     if lowered == "computername":
-        seed = _get_resource_seed(canonical, world_state)
         return f"ip-10-42-{_det_int(seed, 'comp_a', 10)}-{_det_int(seed, 'comp_b', 240) + 10}"
     if lowered == "backuprulecron":
         return "cron(0 3 * * ? *)"
@@ -539,7 +534,7 @@ def _generate_scalar_string(
     if lowered == "reason":
         return "OK"
     if lowered == "lastresourceanalyzed":
-        return f"arn:aws:ec2:{region}:{account_id}:instance/i-{_random_hex(17)}"
+        return f"arn:aws:ec2:{region}:{account_id}:instance/i-{_det_hex(seed, 'last_resource', 17)}"
     if lowered == "resourcetype":
         if canonical.service == "backup":
             return "EBS"
@@ -557,7 +552,6 @@ def _generate_scalar_string(
     if "availabilityzone" in combined:
         return f"{region}a"
     if "privateip" in combined:
-        seed = _get_resource_seed(canonical, world_state)
         return (
             f"10.42.{_det_int(seed, 'pip_a', 10)}.{_det_int(seed, 'pip_b', 240) + 10}"
         )
@@ -677,9 +671,24 @@ def _apply_string_index_variation(member_name: str, value: str, idx: int) -> str
     return value
 
 
-def _random_hex(length: int) -> str:
-    alphabet = string.hexdigits.lower()[:16]
-    return "".join(random.choice(alphabet) for _ in range(length))
+def _det_hex(seed: str, field: str, length: int) -> str:
+    """Derive a deterministic hex string from seed + field tag."""
+    raw = hashlib.sha256(f"{seed}:{field}".encode()).hexdigest()
+    while len(raw) < length:
+        raw += hashlib.sha256(raw.encode()).hexdigest()
+    return raw[:length]
+
+
+def _cache_key(canonical: CanonicalRequest) -> str:
+    """Build response_cache key scoped to the specific resource being queried."""
+    if canonical.target_identifiers:
+        params_hash = hashlib.sha256(
+            json.dumps(
+                sorted(canonical.target_identifiers.items()), separators=(",", ":")
+            ).encode()
+        ).hexdigest()[:8]
+        return f"{canonical.service}:{canonical.operation}:{params_hash}"
+    return f"{canonical.service}:{canonical.operation}"
 
 
 def _get_resource_seed(canonical: CanonicalRequest, world_state: dict[str, Any]) -> str:

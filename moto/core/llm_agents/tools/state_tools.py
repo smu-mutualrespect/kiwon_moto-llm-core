@@ -18,10 +18,10 @@ _lock = threading.RLock()
 def has_cached_agent_response_tool(
     session_id: str, service: str, operation: str
 ) -> bool:
-    """에이전트가 이 operation을 이전에 응답한 적 있는지 확인 (response_cache 기반)."""
+    """에이전트가 이 operation을 이전에 응답한 적 있는지 확인 (agent_responses 기반)."""
     with _lock:
         state = _session_state.get(session_id, {})
-    return f"{service}:{operation}" in state.get("response_cache", {})
+    return f"{service}:{operation}" in state.get("agent_responses", [])
 
 
 def get_session_history_tool(session_id: str) -> str:
@@ -83,12 +83,20 @@ def get_world_state_tool(session_id: str, headers: dict[str, Any]) -> dict[str, 
                     "os_family": "Amazon Linux 2",
                 },
                 "known_names": {},
+                "agent_responses": [],
                 "response_cache": {},
                 "seen_pagination_tokens": [],
                 "session_start_time": datetime.now(timezone.utc).strftime(
                     "%Y-%m-%dT%H:%M:%SZ"
                 ),
             }
+        else:
+            # 매 요청마다 region 갱신 — 공격자가 다른 리전 탐색 시 ARN 일관성 유지
+            current_region = (
+                headers.get("X-Amz-Region") or headers.get("x-amz-region") or ""
+            ).strip()
+            if current_region:
+                _session_state[session_id]["region"] = current_region
         return deepcopy(_session_state[session_id])
 
 
@@ -112,6 +120,12 @@ def update_world_state_tool(
     last_actions = list(next_state.get("last_actions", []))
     last_actions.append(action_key)
     next_state["last_actions"] = last_actions[-10:]
+
+    # 에이전트가 응답한 operation 추적 (has_cached_agent_response_tool 의 broad routing 용)
+    agent_responses = list(next_state.get("agent_responses", []))
+    if action_key not in agent_responses:
+        agent_responses.append(action_key)
+    next_state["agent_responses"] = agent_responses
 
     # Merge environment_delta into world_state
     for key, value in agent_output.environment_delta.items():
@@ -140,7 +154,9 @@ def update_world_state_tool(
     # Cache full field_values for read operations so repeated calls return identical results
     if field_values and _should_cache_operation(canonical.operation):
         response_cache = dict(next_state.get("response_cache", {}))
-        cache_key = f"{canonical.service}:{canonical.operation}"
+        cache_key = _param_cache_key(
+            canonical.service, canonical.operation, canonical.target_identifiers
+        )
         if cache_key not in response_cache:
             response_cache[cache_key] = deepcopy(field_values)
         next_state["response_cache"] = response_cache
@@ -249,6 +265,20 @@ _CACHE_OPERATION_PREFIXES = (
 
 def _should_cache_operation(operation: str) -> bool:
     return operation.lower().startswith(_CACHE_OPERATION_PREFIXES)
+
+
+def _param_cache_key(
+    service: str, operation: str, target_identifiers: dict[str, Any]
+) -> str:
+    """target_identifiers 해시를 포함한 응답 캐시 키 — 파라미터가 다른 동일 operation 구분."""
+    if target_identifiers:
+        params_hash = hashlib.sha256(
+            json.dumps(
+                sorted(target_identifiers.items()), separators=(",", ":")
+            ).encode()
+        ).hexdigest()[:8]
+        return f"{service}:{operation}:{params_hash}"
+    return f"{service}:{operation}"
 
 
 def _merge_known_names(
