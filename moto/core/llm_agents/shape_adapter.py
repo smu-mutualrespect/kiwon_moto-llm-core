@@ -11,6 +11,7 @@ from moto.core.utils import get_service_model
 
 from .tools.planning_tools import ResponsePlan
 from .tools.request_tools import CanonicalRequest
+from .tools.state_tools import _param_cache_key
 
 _MAX_DEPTH = 6
 
@@ -35,7 +36,11 @@ def adapt_response_plan(
     )
 
     # Return cached field_values for repeated read calls to guarantee consistency
-    cached = world_state.get("response_cache", {}).get(_cache_key(canonical))
+    cached = world_state.get("response_cache", {}).get(
+        _param_cache_key(
+            canonical.service, canonical.operation, canonical.target_identifiers
+        )
+    )
     if cached is not None and not is_paginated_continuation:
         payload = deepcopy(cached)
         meta = {
@@ -677,18 +682,6 @@ def _det_hex(seed: str, field: str, length: int) -> str:
     while len(raw) < length:
         raw += hashlib.sha256(raw.encode()).hexdigest()
     return raw[:length]
-
-
-def _cache_key(canonical: CanonicalRequest) -> str:
-    """Build response_cache key scoped to the specific resource being queried."""
-    if canonical.target_identifiers:
-        params_hash = hashlib.sha256(
-            json.dumps(
-                sorted(canonical.target_identifiers.items()), separators=(",", ":")
-            ).encode()
-        ).hexdigest()[:8]
-        return f"{canonical.service}:{canonical.operation}:{params_hash}"
-    return f"{canonical.service}:{canonical.operation}"
 
 
 def _get_resource_seed(canonical: CanonicalRequest, world_state: dict[str, Any]) -> str:
