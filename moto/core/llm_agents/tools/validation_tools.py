@@ -82,10 +82,11 @@ def validate_moto_native_response(
     if not body_str.strip():
         return False
 
-    is_safe, _ = _validate_safety(body_str)
-    if not is_safe:
-        return True
-
+    # NOTE: _validate_safety is intentionally NOT called here.
+    # Moto native responses are trusted internal output and legitimately contain
+    # patterns the safety filter blocks (e.g. https:// URLs in SQS QueueUrl,
+    # AKIA access key IDs in STS UserId).  Safety filtering is only needed for
+    # LLM-generated content (see validate_rendered_response_tool).
     ok, _ = _validate_against_shape(service, operation, body_str, check_empty=False)
     return not ok
 
@@ -183,7 +184,8 @@ def _validate_against_shape(
         for member in _HONEYPOT_CORE_MEMBERS.get((service, operation), []):
             if member not in payload:
                 return False, f"missing honeypot core member: {member}"
-        # 범용 output shape 멤버 검증: 모든 서비스에 자동 적용
+        # 범용 output shape 멤버 검증: 모든 키가 스키마에 없을 때만 거부
+        # (LLM이 생성한 일부 필드가 botocore에 없더라도 허용 — unknown keys 거부 제거)
         if output_shape.members:
             valid_keys = set(output_shape.members.keys())
             response_keys = set(payload.keys())
@@ -192,13 +194,6 @@ def _validate_against_shape(
                     f"response keys {sorted(response_keys)} don't match "
                     f"any AWS schema members; expected one of: {sorted(valid_keys)[:3]}"
                 )
-            if check_empty and response_keys:
-                unknown = response_keys - valid_keys
-                if unknown:
-                    return (
-                        False,
-                        f"response contains fields not in AWS schema: {sorted(unknown)}",
-                    )
         # LLM 응답 경로에서만 값 형식(value format) 검사
         if check_empty:
             ok, reason = _validate_value_formats(payload)
@@ -300,7 +295,7 @@ def _validate_safety(rendered_body: str) -> tuple[bool, str]:
                 rendered_body
             ):
                 continue
-            return False, f"safety pattern denied: {pattern.pattern}"
+            return False, f"Safety pattern denied: {pattern.pattern}"
     return True, "ok"
 
 

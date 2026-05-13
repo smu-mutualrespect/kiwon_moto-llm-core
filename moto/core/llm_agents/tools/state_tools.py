@@ -15,6 +15,13 @@ _session_state: dict[str, dict[str, Any]] = {}
 _lock = threading.RLock()
 
 
+def has_any_agent_response(session_id: str) -> bool:
+    """True if the agent has responded at least once in this session."""
+    with _lock:
+        state = _session_state.get(session_id, {})
+    return bool(state.get("agent_responses"))
+
+
 def has_cached_agent_response_tool(
     session_id: str, service: str, operation: str
 ) -> bool:

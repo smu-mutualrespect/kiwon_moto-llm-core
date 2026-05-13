@@ -413,6 +413,7 @@ def _generate_scalar_string(
         scoped_key = f"{canonical.service}:{member_name}"
         if scoped_key in known_names:
             return known_names[scoped_key]
+        # *Name 조기 반환은 구체적 패턴 처리 후 마지막 fallback에서 수행
 
     if "arn" in combined:
         target = canonical.target_identifiers.get(
@@ -454,6 +455,8 @@ def _generate_scalar_string(
         return "job-" + _det_hex(seed, "jobid", 10)
     if "requestid" in combined or "request id" in combined:
         return "req-" + _det_hex(seed, "requestid", 16)
+    if lowered in ("account", "accountid", "awsaccountid", "ownerid"):
+        return account_id
     if lowered.endswith("id"):
         direct = canonical.target_identifiers.get(member_name)
         if direct:
@@ -566,7 +569,40 @@ def _generate_scalar_string(
         return "running"
     if "version" in combined:
         return "1"
-    return member_name
+    # ── Generic patterns to prevent key:key fallback ─────────────────────────
+    if any(
+        t in combined for t in ("description", "comment", "summary", "note", "detail")
+    ):
+        return f"{canonical.service.capitalize()} managed resource"
+    if "protocol" in combined:
+        return "https"
+    if "format" in combined:
+        return "JSON"
+    if "encoding" in combined:
+        return "UTF-8"
+    if "contenttype" in combined or "content type" in combined:
+        return "application/json"
+    if any(t in combined for t in ("owner", "creator", "author")):
+        return "admin"
+    if "path" in combined or "prefix" in combined:
+        return "/"
+    if lowered.endswith("type") and "instance" not in lowered:
+        return "Standard"
+    if lowered.endswith("value"):
+        direct = canonical.target_identifiers.get(member_name)
+        return direct if direct else f"value-{_det_hex(seed, lowered, 8)}"
+    if lowered.endswith("key"):
+        return f"key-{_det_hex(seed, lowered, 8)}"
+    if lowered.endswith("uri"):
+        return f"mock://{canonical.service}/{canonical.operation.lower()}/{_det_hex(seed, lowered, 8)}"
+    if lowered.endswith("status"):
+        return "ACTIVE"
+    # *Name 필드: 구체적 패턴이 없으면 이름처럼 보이는 값 생성
+    if lowered.endswith("name") and lowered != "name":
+        prefix = lowered.removesuffix("name")
+        return f"{prefix}-{_det_hex(seed, lowered, 6)}"
+    # Last-resort: a short hex string looks more realistic than returning the field name
+    return _det_hex(seed, lowered, 12)
 
 
 def _generate_boolean(member_name: str, canonical: CanonicalRequest) -> bool:

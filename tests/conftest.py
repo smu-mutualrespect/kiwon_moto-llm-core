@@ -5,6 +5,24 @@ from moto import mock_aws
 from moto.utilities.id_generator import ResourceIdentifier, moto_id_manager
 
 
+@pytest.fixture(autouse=True)
+def _reset_llm_agent_session_state() -> None:
+    """테스트 간 llm_agents 세션 상태 오염 방지.
+
+    모든 테스트가 동일한 mock access key(→ 동일 session_id)를 사용하므로,
+    한 테스트에서 에이전트가 응답하면 이후 테스트의 _normalize_native_body 등에 영향을 줄 수 있다.
+    각 테스트 함수 종료 후 honeypot 상태를 초기화해 완전한 격리를 보장한다.
+    """
+    yield
+    try:
+        import moto.core.llm_agents.tools.state_tools as _st
+
+        _st._session_storage.clear()
+        _st._session_state.clear()
+    except Exception:
+        pass
+
+
 @pytest.fixture(scope="function")
 def account_id():
     """Return the current Account ID. Will reach out to AWS if so configured."""

@@ -758,14 +758,18 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
             pass
 
     def _normalize_native_body(self, body: Any) -> Any:
-        """moto 기본 account ID를 세션 파생 account ID로 교체해 에이전트 응답과 일관성 유지."""
+        """moto 기본 account ID를 세션 파생 account ID로 교체해 에이전트 응답과 일관성 유지.
+        에이전트가 이 세션에서 한 번도 응답하지 않은 경우에는 교체하지 않는다 — 순수 moto 테스트 환경 보호."""
         try:
+            from moto.core.llm_agents.tools import has_any_agent_response
             from moto.core.llm_agents.tools.state_tools import _derive_account_id
             from moto.core.models import DEFAULT_ACCOUNT_ID
 
             session_id = extract_session_id_tool(dict(self.headers))
             session_account_id = _derive_account_id(session_id)
             if session_account_id == DEFAULT_ACCOUNT_ID:
+                return body
+            if not has_any_agent_response(session_id):
                 return body
             if isinstance(body, bytes):
                 return body.replace(
