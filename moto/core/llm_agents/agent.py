@@ -86,7 +86,7 @@ def handle_aws_request(
         response_body,
     )
     update_world_state_tool(
-        session_id, world_state, canonical, agent_output, rendered_meta
+        session_id, world_state, canonical, agent_output, rendered_meta, field_values
     )
 
     validation_passed = rendered_meta.get("validation_passed", bool(response_body))

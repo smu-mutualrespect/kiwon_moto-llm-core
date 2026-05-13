@@ -380,6 +380,12 @@ def _generate_scalar_string(
     shape_name = getattr(shape, "name", "")
     combined = f"{shape_name} {member_name}".lower()
 
+    # Reuse previously seen name-type values from this session
+    known_names = world_state.get("known_names", {})
+    if lowered.endswith("name") or lowered == "name":
+        if member_name in known_names:
+            return known_names[member_name]
+
     if "arn" in combined:
         target = canonical.target_identifiers.get(
             member_name
@@ -516,7 +522,10 @@ def _generate_scalar_string(
         if any(
             token in lowered for token in ("created", "updated", "analyzed", "date")
         ):
-            return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            return str(
+                world_state.get("session_start_time")
+                or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            )
     if "availabilityzone" in combined:
         return f"{region}a"
     if "privateip" in combined:
