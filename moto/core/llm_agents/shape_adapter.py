@@ -88,7 +88,13 @@ def _generate_structure(
         return {}
 
     result: dict[str, Any] = {}
-    for member_name, member_shape in shape.members.items():
+    # botocore structure member들을 list로 바꿔 union shape에서 일부만 선택할 수 있게 한다.
+    members = list(shape.members.items())
+    # union shape는 동시에 여러 member가 있으면 AWS CLI parser가 실패하므로 하나만 생성한다.
+    if getattr(shape, "metadata", {}).get("union"):
+        members = members[:1]
+    # 선택된 member들에 대해 fallback 응답 값을 생성한다.
+    for member_name, member_shape in members:
         if (
             member_name in response_plan.omit_fields
             and member_name not in protected_members
@@ -226,16 +232,29 @@ def _lookup_explicit_hint(
     canonical: CanonicalRequest,
     response_plan: ResponsePlan,
 ) -> Any:
+    # LLM response_plan, request params, target identifiers에서 같은 필드를 여러 표기법으로 찾는다.
     candidates = [
+        # botocore output member 이름 그대로 찾는다.
         member_name,
+        # Query protocol의 list 첫 항목 표기인 InstanceId.1 같은 key를 찾는다.
+        f"{member_name}.1",
+        # lowerCamelCase 표기로 들어온 hint를 찾는다.
         member_name[:1].lower() + member_name[1:],
+        # lowerCamelCase + .1 표기로 들어온 query hint를 찾는다.
+        f"{member_name[:1].lower() + member_name[1:]}.1",
+        # 완전 소문자 표기로 들어온 hint를 찾는다.
         member_name.lower(),
+        # 완전 소문자 + .1 표기로 들어온 query hint를 찾는다.
+        f"{member_name.lower()}.1",
     ]
+    # 우선 LLM이 명시한 field_hints를 가장 신뢰한다.
     for key in candidates:
         if key in response_plan.field_hints:
             return response_plan.field_hints[key]
+        # 다음으로 실제 요청 파라미터에서 온 값을 반영한다.
         if key in canonical.request_params:
             return canonical.request_params[key]
+        # 마지막으로 identifier extractor가 뽑아둔 값을 반영한다.
         if key in canonical.target_identifiers:
             return canonical.target_identifiers[key]
     return None
@@ -354,16 +373,40 @@ def _normalize_string_hint(
     world_state: dict[str, Any],
     member_name: str,
 ) -> str:
+    # 빈 문자열은 의미를 바꿀 필요가 없으므로 그대로 둔다.
     if not value:
         return value
+    # ARN/account 보정에 사용할 세션 고정 account id를 읽는다.
     account_id = str(
         world_state.get("consistency_locks", {}).get("account_id", "123456789012")
     )
+    # ARN/region 보정에 사용할 현재 region을 읽는다.
     region = str(world_state.get("region", "us-east-1"))
+    # 이미 ARN이면 account/region이 세션과 일치하도록 다시 쓴다.
     if value.startswith("arn:aws:"):
         return _rewrite_arn_account(value, account_id, region, canonical)
+    # ARN 필드인데 ARN 형식이 아니면 plausible ARN으로 변환한다.
     if member_name.lower().endswith("arn") and not value.startswith("arn:aws:"):
         return _rewrite_arn_account(value, account_id, region, canonical)
+    # member 이름 비교를 위해 소문자로 정규화한다.
+    lowered = member_name.lower()
+    # 잘못된 InstanceId hint는 AWS-like i-xxxxxxxx 형식으로 바꾼다.
+    if lowered == "instanceid" and not re.match(r"^i-[0-9a-f]{8,17}$", value):
+        return "i-" + _det_hex(value, "instanceid", 17)
+    # 잘못된 VolumeId hint는 AWS-like vol-xxxxxxxx 형식으로 바꾼다.
+    if lowered == "volumeid" and not re.match(r"^vol-[0-9a-f]{8,17}$", value):
+        return "vol-" + _det_hex(value, "volumeid", 17)
+    # 잘못된 VpcId hint는 AWS-like vpc-xxxxxxxx 형식으로 바꾼다.
+    if lowered == "vpcid" and not re.match(r"^vpc-[0-9a-f]{8,17}$", value):
+        return "vpc-" + _det_hex(value, "vpcid", 17)
+    # 잘못된 SubnetId hint는 AWS-like subnet-xxxxxxxx 형식으로 바꾼다.
+    if lowered == "subnetid" and not re.match(r"^subnet-[0-9a-f]{8,17}$", value):
+        return "subnet-" + _det_hex(value, "subnetid", 17)
+    # 잘못된 security group hint는 AWS-like sg-xxxxxxxx 형식으로 바꾼다.
+    if lowered in {"groupid", "securitygroupid"} and not re.match(
+        r"^sg-[0-9a-f]{8,17}$", value
+    ):
+        return "sg-" + _det_hex(value, "securitygroupid", 17)
     return value
 
 
@@ -392,20 +435,33 @@ def _generate_scalar_string(
     canonical: CanonicalRequest,
     world_state: dict[str, Any],
 ) -> str | None:
+    # 같은 request/session에서는 같은 seed로 deterministic fake 값을 만들기 위해 seed를 계산한다.
+    seed = _get_resource_seed(canonical, world_state)
+    # ARN/account field 생성에 사용할 세션 account id를 읽는다.
+    account_id = str(
+        world_state.get("consistency_locks", {}).get("account_id", "123456789012")
+    )
+    # ARN/URL field 생성에 사용할 region을 읽는다.
+    region = str(world_state.get("region", "us-east-1"))
+    # member 이름 비교를 위해 소문자로 정규화한다.
+    lowered = member_name.lower()
+    # shape 이름과 member 이름을 합쳐 field 의미를 추론한다.
+    shape_name = getattr(shape, "name", "")
+    combined = f"{shape_name} {member_name}".lower()
+
+    # MonitorInstances 응답 state는 enabled가 자연스럽다.
+    if lowered == "state" and canonical.operation == "MonitorInstances":
+        return "enabled"
+    # UnmonitorInstances 응답 state는 disabled가 자연스럽다.
+    if lowered == "state" and canonical.operation == "UnmonitorInstances":
+        return "disabled"
+
+    # botocore enum이 있으면 허용 enum 중 하나를 골라 CLI parser 실패를 막는다.
     enum = getattr(shape, "enum", None) or []
     if enum:
         preferred = _pick_enum_value(enum)
         if preferred:
             return preferred
-
-    seed = _get_resource_seed(canonical, world_state)
-    account_id = str(
-        world_state.get("consistency_locks", {}).get("account_id", "123456789012")
-    )
-    region = str(world_state.get("region", "us-east-1"))
-    lowered = member_name.lower()
-    shape_name = getattr(shape, "name", "")
-    combined = f"{shape_name} {member_name}".lower()
 
     # Reuse previously seen name-type values, scoped by service to prevent cross-service bleed
     known_names = world_state.get("known_names", {})
@@ -496,7 +552,11 @@ def _generate_scalar_string(
         return None
     if "url" in combined:
         return f"mock://{canonical.service}/{canonical.operation.lower()}/{_det_hex(seed, 'url_suffix', 12)}"
-    if "message" in combined:
+    # status message에는 내부 synthetic JSON을 넣지 않고 사람이 볼 수 있는 성공 문구를 넣는다.
+    if lowered == "statusmessage":
+        return "Operation completed successfully"
+    # STS DecodeAuthorizationMessage의 DecodedMessage만 JSON 문자열 의미가 있으므로 별도 처리한다.
+    if lowered == "decodedmessage":
         return json.dumps(
             {
                 "allowed": False,
@@ -505,6 +565,9 @@ def _generate_scalar_string(
             },
             separators=(",", ":"),
         )
+    # 일반 message field에는 synthetic/debug JSON이 새지 않게 평범한 문구를 넣는다.
+    if "message" in combined:
+        return "Operation completed successfully"
     if "contextkey" in combined or "context key" in combined:
         return "aws:RequestedRegion"
     if "platformtype" in combined:
@@ -533,8 +596,6 @@ def _generate_scalar_string(
         return "cron(0 3 * * ? *)"
     if lowered == "backupruletimezone":
         return "UTC"
-    if lowered == "statusmessage":
-        return "Recovery point completed successfully"
     if lowered == "mediatype":
         return "application/vnd.docker.image.rootfs.diff.tar"
     if lowered == "resourcepolicy":

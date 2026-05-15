@@ -52,6 +52,24 @@ def test_normalizer_extracts_json_request_params_and_identifiers() -> None:
     assert req.target_identifiers["layerDigest"] == "sha256:abc"
 
 
+def test_normalizer_recovers_service_from_sigv4_authorization() -> None:
+    req = normalize_request_tool(
+        service=None,
+        action="ListAnalyzers",
+        url="http://127.0.0.1:5000/analyzer",
+        headers={
+            "Authorization": (
+                "AWS4-HMAC-SHA256 "
+                "Credential=AKIAEXAMPLE/20260515/us-east-1/access-analyzer/aws4_request"
+            )
+        },
+        body="",
+    )
+
+    assert req.service == "accessanalyzer"
+    assert req.operation == "ListAnalyzers"
+
+
 def test_parse_agent_output_falls_back_on_invalid_text() -> None:
     assert parse_agent_output("not-a-json") == DEFAULT_OUTPUT
 
@@ -99,8 +117,9 @@ def test_handle_aws_request_replans_after_validation_failure(monkeypatch) -> Non
                         "field_hints": {
                             "InstanceInformationList": [
                                 {
-                                    "InstanceId": "not-an-instance-id",
-                                    "PlatformType": "TotallyLinux",
+                                    "InstanceId": "i-1234567890abcdef0",
+                                    "PlatformType": "Linux",
+                                    "ComputerName": "https://evil.example",
                                 }
                             ]
                         },
@@ -232,9 +251,9 @@ def test_agent_tool_executor_exposes_honeypot_tools() -> None:
 
     observation = execute_agent_tool_requests(
         [
-            {"tool": "aws_cli.inspect_reference_output", "args": {}},
+            {"tool": "schema.inspect_output_shape", "args": {}},
             {"tool": "state.inspect_consistency", "args": {}},
-            {"tool": "latency.estimate_budget", "args": {"target_ms": 3000}},
+            {"tool": "mock_data.get_mock_template", "args": {"category": "iam_policy"}},
         ],
         canonical=canonical,
         world_state=world_state,
@@ -242,18 +261,19 @@ def test_agent_tool_executor_exposes_honeypot_tools() -> None:
     )
 
     assert observation.startswith("TOOL_OBSERVATIONS=")
-    assert "batch-check-layer-availability.html" in observation
-    assert "top_level_members" in observation
+    assert "BatchCheckLayerAvailability" in observation
+    assert "layers" in observation
     assert "123456789012" in observation
-    assert "should_call_more_tools" in observation
+    assert "2012-10-17" in observation
 
 
 def test_tool_registry_lists_only_agent_callable_tools() -> None:
     tools = get_available_tool_names()
 
     assert "skills.load_skill_document" in tools
-    assert "aws_cli.inspect_reference_output" in tools
-    assert "validator.explain_last_failure" in tools
+    assert "schema.inspect_output_shape" in tools
+    assert "state.inspect_consistency" in tools
+    assert "mock_data.get_mock_template" in tools
     assert "shape_adapter.adapt_response_plan" not in tools
     assert "render_tools.serialize_response_tool" not in tools
 
@@ -383,10 +403,56 @@ def test_shape_adapter_echoes_request_identifiers_when_available() -> None:
     assert payload["layerDigest"] == "sha256:abc"
 
 
+def test_shape_adapter_generates_single_member_for_union_shapes(monkeypatch) -> None:
+    monkeypatch.setenv("MOTO_LLM_OFFLINE_STUB", "1")
+
+    response_body = handle_aws_request(
+        service="accessanalyzer",
+        action="ListAnalyzers",
+        url="http://127.0.0.1:5000/analyzer",
+        headers={
+            "Authorization": (
+                "AWS4-HMAC-SHA256 "
+                "Credential=AKIAEXAMPLE/20260515/us-east-1/access-analyzer/aws4_request"
+            )
+        },
+        body=b"",
+        reason="unit test",
+        source="unit_test",
+    )
+
+    parsed = json.loads(response_body)
+    configuration = parsed["analyzers"][0]["configuration"]
+    assert list(configuration) == ["unusedAccess"]
+
+
+def test_shape_adapter_preserves_aws_like_instance_ids(monkeypatch) -> None:
+    monkeypatch.setenv("MOTO_LLM_OFFLINE_STUB", "1")
+
+    response_body = handle_aws_request(
+        service="ec2",
+        action="MonitorInstances",
+        url="http://127.0.0.1:5000/",
+        headers={
+            "Authorization": (
+                "AWS4-HMAC-SHA256 "
+                "Credential=AKIAEXAMPLE/20260515/us-east-1/ec2/aws4_request"
+            )
+        },
+        body="Action=MonitorInstances&InstanceId.1=i-1234567890abcdef0",
+        reason="unit test",
+        source="unit_test",
+    )
+
+    assert "i-1234567890abcdef0" in response_body
+    assert "instanceid-12345abcde" not in response_body
+
+
 def test_call_gpt_api_uses_direct_openai_by_default(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("MOTO_LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("MOTO_LLM_OPENAI_MAX_OUTPUT_TOKENS", raising=False)
 
     captured: dict[str, object] = {}
 

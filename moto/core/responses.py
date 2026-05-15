@@ -273,6 +273,33 @@ _RESOURCE_ID_IN_ERROR_RE = re.compile(
     r"'((?:sg|i|ami|subnet|vpc|vol|key|rtb|igw|nat|eni|acl|snap)-[0-9a-f]{6,17})'"
 )
 
+# native Moto가 에러를 냈을 때 허니팟 품질 때문에 LLM fallback으로 바꿀 operation 목록이다.
+_HONEYPOT_NATIVE_ERROR_OPERATIONS = {
+    # 없는 stack이라고 바로 말하면 빈 랩이 드러나므로 agent가 plausible stack resource를 만든다.
+    ("cloudformation", "DescribeStackResources"),
+    # Organizations 미사용 계정이라고 바로 말하면 빈 랩이 드러나므로 agent가 plausible root를 만든다.
+    ("organizations", "ListRoots"),
+}
+
+# native Moto가 성공하더라도 빈 inventory를 드러낼 수 있어 LLM fallback을 강제할 recon operation 목록이다.
+_HONEYPOT_FORCE_RECON_FALLBACK_OPERATIONS = {
+    # Backup vault 목록은 허니팟에서 decoy backup surface를 보여주는 편이 낫다.
+    ("backup", "ListBackupVaults"),
+    # Stack 목록은 cloud inventory recon의 핵심이라 빈 응답 대신 decoy surface를 만든다.
+    ("cloudformation", "ListStacks"),
+    # Account 목록은 organization recon의 핵심이라 native empty account만 노출하지 않는다.
+    ("organizations", "ListAccounts"),
+}
+
+# native 에러 본문에서 빈 랩/미구현 상태를 드러내는 패턴을 찾는다.
+_HONEYPOT_NATIVE_ERROR_RE = re.compile(
+    # AWS 공통 not found 계열과 organization 미사용 계열 메시지를 한 regex로 묶는다.
+    r"ValidationError|NotFound|NoSuchEntity|NoSuchKey|does\s+not\s+exist"
+    r"|AWSOrganizationsNotInUseException|not\s+a\s+member\s+of\s+an\s+organization",
+    # AWS 에러 메시지 capitalization 차이를 무시한다.
+    re.IGNORECASE,
+)
+
 
 def _session_error_needs_agent_fallback(
     session_id: str, status: int, body: Any
@@ -310,6 +337,76 @@ def _session_error_needs_agent_fallback(
     except Exception:
         return False
     return any(resource_id in item.get("response", "") for item in history)
+
+
+def _native_error_should_fallback_for_honeypot(
+    service: str,
+    operation: Optional[str],
+    status: int,
+    body: Any,
+) -> bool:
+    """Route selected empty-lab native errors to the agent for deception fidelity."""
+    # operation을 모르거나 native 응답이 에러가 아니면 이 정책의 대상이 아니다.
+    if not operation or status < 400:
+        return False
+    # 환경 변수로 native-error fallback을 끌 수 있게 둔다.
+    if os.getenv("MOTO_LLM_HONEYPOT_NATIVE_ERROR_FALLBACK", "1").strip().lower() in {
+        "0",
+        "false",
+        "no",
+    }:
+        return False
+    # LLM fallback이 설정되지 않은 일반 Moto 실행에서는 기존 native 동작을 유지한다.
+    if not (
+        os.getenv("MOTO_LLM_ENV_FILE")
+        or os.getenv("MOTO_LLM_OFFLINE_STUB")
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("ANTHROPIC_API_KEY")
+    ):
+        return False
+    # curated 목록에 없는 operation은 광범위하게 가로채지 않는다.
+    if (service, operation) not in _HONEYPOT_NATIVE_ERROR_OPERATIONS:
+        return False
+    # body가 str/bytes/기타 타입일 수 있어서 regex 검사 전에 문자열로 통일한다.
+    body_str = (
+        body
+        if isinstance(body, str)
+        else (
+            body.decode("utf-8", errors="ignore")
+            if isinstance(body, bytes)
+            else str(body)
+        )
+    )
+    # native 에러 본문이 빈 랩/리소스 없음 패턴이면 agent fallback을 호출한다.
+    return bool(_HONEYPOT_NATIVE_ERROR_RE.search(body_str))
+
+
+def _native_success_should_fallback_for_honeypot(
+    service: str,
+    operation: Optional[str],
+    status: int,
+) -> bool:
+    """Prefer agent-generated recon surfaces over empty native inventory responses."""
+    # operation을 모르거나 native 응답이 성공이 아니면 success 강제 fallback 대상이 아니다.
+    if not operation or status >= 400:
+        return False
+    # 환경 변수로 recon 강제 fallback을 끌 수 있게 둔다.
+    if os.getenv("MOTO_LLM_HONEYPOT_FORCE_RECON_FALLBACK", "1").strip().lower() in {
+        "0",
+        "false",
+        "no",
+    }:
+        return False
+    # LLM fallback이 설정되지 않은 일반 Moto 실행에서는 기존 native 성공 응답을 유지한다.
+    if not (
+        os.getenv("MOTO_LLM_ENV_FILE")
+        or os.getenv("MOTO_LLM_OFFLINE_STUB")
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("ANTHROPIC_API_KEY")
+    ):
+        return False
+    # curated recon 목록에 들어간 operation만 native 성공 대신 agent fallback으로 바꾼다.
+    return (service, operation) in _HONEYPOT_FORCE_RECON_FALLBACK_OPERATIONS
 
 
 def _moto_native_needs_fallback(
@@ -731,17 +828,31 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
             # Moto native 응답을 실제 AWS CLI 형식(botocore 스키마)과 비교하거나,
             # Agent가 이미 이 operation에 응답한 적 있으면 캐시된 응답으로 일관성 유지
             _session_id = extract_session_id_tool(dict(self.headers))
+            # native 응답을 그대로 내보낼지 agent fallback으로 바꿀지 모든 정책을 한 boolean으로 합친다.
             _needs_fallback = self.service_name and (
+                # native 응답이 botocore shape와 맞지 않거나 high-interaction이면 fallback을 탄다.
                 _moto_native_needs_fallback(
                     self.service_name, self._get_action(), body, status
                 )
+                # 같은 세션에서 이미 agent가 만든 operation이면 일관성을 위해 계속 fallback을 탄다.
                 or has_cached_agent_response_tool(
                     _session_id, self.service_name or "", action or ""
                 )
+                # 이전 agent 응답에서 노출한 리소스 ID가 native not-found로 이어지면 fallback을 탄다.
                 or _session_error_needs_agent_fallback(_session_id, status, body)
+                # curated native 에러가 빈 랩을 노출할 때 fallback을 탄다.
+                or _native_error_should_fallback_for_honeypot(
+                    self.service_name, self._get_action(), status, body
+                )
+                # curated recon native 성공이 빈 inventory를 노출할 때 fallback을 탄다.
+                or _native_success_should_fallback_for_honeypot(
+                    self.service_name, self._get_action(), status
+                )
             )
+            # 위 정책 중 하나라도 참이면 agent runtime으로 AWS-shaped 응답을 다시 만든다.
             if _needs_fallback:
                 try:
+                    # 원본 request context를 agent에 넘겨 service/action에 맞는 response shape를 만든다.
                     fallback_text = handle_aws_request(
                         service=self.service_name,
                         action=action,

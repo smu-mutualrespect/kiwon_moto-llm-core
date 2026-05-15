@@ -7,6 +7,23 @@ from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
 
+# SigV4 signing service 이름과 botocore service id가 다른 경우 fallback normalizer에서 보정한다.
+_SIGNING_SERVICE_ALIASES = {
+    # access-analyzer는 signing name이고 accessanalyzer는 botocore service id다.
+    "access-analyzer": "accessanalyzer",
+}
+
+# X-Amz-Target prefix만 보고 service를 복구해야 하는 JSON RPC 계열 service 목록이다.
+_TARGET_PREFIX_SERVICES = {
+    # FraudDetector의 JSON RPC target prefix다.
+    "AWSHawksNestServiceFacade": "frauddetector",
+    # Resource Explorer v2의 JSON RPC target prefix다.
+    "AWSResourceExplorer": "resource-explorer-2",
+    # Backup Gateway의 JSON RPC target prefix다.
+    "BackupOnPremises_v20210101": "backup-gateway",
+}
+
+
 @dataclass(frozen=True)
 class CanonicalRequest:
     service: str
@@ -26,9 +43,23 @@ def normalize_request_tool(
     headers: dict[str, Any],
     body: Any,
 ) -> CanonicalRequest:
-    normalized_service = (service or _service_from_host(url) or "unknown").lower()
+    # 호출자가 service를 이미 넘겼으면 그 값을 최우선으로 쓴다.
+    normalized_service = (
+        service
+        # service가 없으면 X-Amz-Target prefix에서 먼저 복구한다.
+        or _service_from_target(headers)
+        # target으로 안 되면 SigV4 Authorization credential scope에서 복구한다.
+        or _service_from_authorization(headers)
+        # 그래도 안 되면 URL host의 첫 component에서 복구한다.
+        or _service_from_host(url)
+        # 모든 추론이 실패하면 audit/debug가 가능하도록 unknown으로 남긴다.
+        or "unknown"
+    ).lower()
+    # body/query/json을 통합 request parameter dict로 정규화한다.
     request_params, body_format = _extract_request_params(headers, body)
+    # 명시 action, X-Amz-Target, body Action= 순서로 raw action을 뽑는다.
     raw_action = _extract_action(action, headers, body)
+    # raw action을 botocore operation 이름 형태로 정규화한다.
     operation = _canonical_operation(raw_action)
 
     probe_style = "enumeration"
@@ -161,3 +192,29 @@ def _service_from_host(url: str) -> Optional[str]:
     if first in {"ec2", "ssm", "iam", "sts", "s3", "ecr", "secretsmanager"}:
         return first
     return None
+
+
+def _service_from_authorization(headers: dict[str, Any]) -> Optional[str]:
+    # 헤더 키 대소문자 차이를 흡수해서 Authorization 값을 읽는다.
+    auth = str(headers.get("Authorization") or headers.get("authorization") or "")
+    # SigV4 Credential scope의 service segment를 추출한다.
+    match = re.search(r"Credential=[^,/]+/\d{8}/[^/]+/([^/]+)/aws4_request", auth)
+    # SigV4 형식이 아니면 service를 알 수 없으므로 None을 반환한다.
+    if not match:
+        return None
+    # 추출한 signing service를 lower-case로 통일한다.
+    service = match.group(1).lower()
+    # signing service와 botocore service id가 다르면 alias로 바꾼다.
+    return _SIGNING_SERVICE_ALIASES.get(service, service)
+
+
+def _service_from_target(headers: dict[str, Any]) -> Optional[str]:
+    # JSON RPC 요청의 X-Amz-Target 헤더를 대소문자 차이까지 고려해 읽는다.
+    target = headers.get("X-Amz-Target") or headers.get("x-amz-target")
+    # Prefix.Operation 형태가 아니면 이 방법으로 service를 복구할 수 없다.
+    if not target or "." not in str(target):
+        return None
+    # 점 앞 prefix가 service family를 나타낸다.
+    prefix = str(target).split(".", 1)[0]
+    # 알려진 prefix면 botocore service id를 반환하고, 아니면 None을 반환한다.
+    return _TARGET_PREFIX_SERVICES.get(prefix)

@@ -176,7 +176,7 @@ aws backup-gateway list-gateways
 ```bash
 # AI & Machine Learning
 aws bedrock list-foundation-models
-aws healthomics list-runs
+aws omics list-runs
 
 # Developer Tools & Migration
 aws codeguru-reviewer list-repository-associations

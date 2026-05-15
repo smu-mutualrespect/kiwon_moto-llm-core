@@ -1,13 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
-source /home/moto/sangho-env/bin/activate
-cd /home/moto/sangho_moto-llm-core
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
 
-export $(cat .env | xargs)
+if [[ -f /home/moto/sangho-env/bin/activate ]]; then
+    source /home/moto/sangho-env/bin/activate
+fi
+
+if [[ -f .env ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source .env
+    set +a
+fi
 export AWS_ACCESS_KEY_ID=testing
 export AWS_SECRET_ACCESS_KEY=testing
 export AWS_DEFAULT_REGION=us-east-1
+export AWS_DISABLE_HOST_PREFIX_INJECTION=true
 export MOTO_LLM_AUDIT_FILE=/tmp/moto_audit_40.json
 export AWS_ENDPOINT_URL=http://127.0.0.1:5000
 
@@ -75,7 +85,7 @@ run_cmd 23  "detective:ListGraphs"                        detective list-graphs
 run_cmd 24  "auditmanager:ListAssessments"                auditmanager list-assessments
 run_cmd 25  "outposts:ListOutposts"                       outposts list-outposts
 run_cmd 26  "appflow:ListFlows"                           appflow list-flows
-run_cmd 27  "healthomics:ListRuns"                        healthomics list-runs
+run_cmd 27  "omics:ListRuns"                              omics list-runs
 run_cmd 28  "mgn:DescribeSourceServers"                   mgn describe-source-servers
 run_cmd 29  "codeguru-reviewer:ListRepositoryAssociations" codeguru-reviewer list-repository-associations
 run_cmd 30  "backup-gateway:ListGateways"                 backup-gateway list-gateways
