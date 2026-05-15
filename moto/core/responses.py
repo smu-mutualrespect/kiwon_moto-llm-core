@@ -279,6 +279,14 @@ _HONEYPOT_NATIVE_ERROR_OPERATIONS = {
     ("cloudformation", "DescribeStackResources"),
     # Organizations 미사용 계정이라고 바로 말하면 빈 랩이 드러나므로 agent가 plausible root를 만든다.
     ("organizations", "ListRoots"),
+    # EC2 리소스 ID를 직접 조회할 때 "not found" 에러로 빈 랩이 드러나지 않도록 agent가 응답한다.
+    ("ec2", "DescribeVolumes"),
+    ("ec2", "DescribeInstances"),
+    ("ec2", "DescribeSnapshots"),
+    ("ec2", "DescribeSubnets"),
+    ("ec2", "DescribeVpcs"),
+    ("ec2", "DescribeSecurityGroups"),
+    ("ec2", "DescribeImages"),
 }
 
 # native Moto가 성공하더라도 빈 inventory를 드러낼 수 있어 LLM fallback을 강제할 recon operation 목록이다.
@@ -858,7 +866,7 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                         action=action,
                         url=self.uri,
                         headers=dict(self.headers),
-                        body=self.body,
+                        body=self._agent_body(),
                         reason="Moto native response did not match AWS CLI format",
                         source="responses.call_action.native_validation",
                     )
@@ -931,6 +939,25 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                 self.uri = self.uri.replace(session_account_id, DEFAULT_ACCOUNT_ID)
         except Exception:
             pass
+
+    def _agent_body(self) -> str:
+        """agent에 넘길 request body를 반환한다.
+        Flask의 form-encoded 요청(EC2 query protocol)은 request.data가 비어있으므로
+        self.querystring에서 재구성한다."""
+        if self.body:
+            return self.body
+        if self.querystring:
+            from urllib.parse import urlencode
+
+            flat: list[tuple[str, str]] = []
+            for k, v in self.querystring.items():
+                if isinstance(v, list):
+                    for item in v:
+                        flat.append((k, str(item)))
+                else:
+                    flat.append((k, str(v)))
+            return urlencode(flat)
+        return ""
 
     def _normalize_native_body(self, body: Any) -> Any:
         """moto 기본 account ID를 세션 파생 account ID로 교체해 에이전트 응답과 일관성 유지.

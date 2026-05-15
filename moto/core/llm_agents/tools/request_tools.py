@@ -152,7 +152,12 @@ def _extract_target_identifiers(request_params: dict[str, Any]) -> dict[str, str
             if value:
                 visit(prefix, value[0])
             return
-        key = prefix.split(".")[-1]
+        parts = prefix.split(".")
+        key = parts[-1]
+        # EC2 쿼리 프로토콜: VolumeId.1, InstanceId.1 등 끝이 숫자인 indexed param 처리
+        # 마지막 컴포넌트가 순수 숫자면 바로 앞 컴포넌트를 실제 키로 사용한다.
+        if key.isdigit() and len(parts) >= 2:
+            key = parts[-2]
         if not key:
             return
         lowered = key.lower()

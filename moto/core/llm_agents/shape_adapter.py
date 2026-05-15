@@ -390,23 +390,49 @@ def _normalize_string_hint(
         return _rewrite_arn_account(value, account_id, region, canonical)
     # member 이름 비교를 위해 소문자로 정규화한다.
     lowered = member_name.lower()
-    # 잘못된 InstanceId hint는 AWS-like i-xxxxxxxx 형식으로 바꾼다.
-    if lowered == "instanceid" and not re.match(r"^i-[0-9a-f]{8,17}$", value):
-        return "i-" + _det_hex(value, "instanceid", 17)
-    # 잘못된 VolumeId hint는 AWS-like vol-xxxxxxxx 형식으로 바꾼다.
-    if lowered == "volumeid" and not re.match(r"^vol-[0-9a-f]{8,17}$", value):
-        return "vol-" + _det_hex(value, "volumeid", 17)
-    # 잘못된 VpcId hint는 AWS-like vpc-xxxxxxxx 형식으로 바꾼다.
-    if lowered == "vpcid" and not re.match(r"^vpc-[0-9a-f]{8,17}$", value):
-        return "vpc-" + _det_hex(value, "vpcid", 17)
-    # 잘못된 SubnetId hint는 AWS-like subnet-xxxxxxxx 형식으로 바꾼다.
-    if lowered == "subnetid" and not re.match(r"^subnet-[0-9a-f]{8,17}$", value):
-        return "subnet-" + _det_hex(value, "subnetid", 17)
-    # 잘못된 security group hint는 AWS-like sg-xxxxxxxx 형식으로 바꾼다.
-    if lowered in {"groupid", "securitygroupid"} and not re.match(
-        r"^sg-[0-9a-f]{8,17}$", value
-    ):
-        return "sg-" + _det_hex(value, "securitygroupid", 17)
+
+    # ── 리소스 ID 재작성 규칙 ──────────────────────────────────────────────────
+    # LLM이 제공한 generic 예시 ID를 세션+리소스 고유값으로 재작성한다.
+    # 규칙: (1) 요청에서 명시한 리소스 ID → 그대로 echo (실제 AWS 동작)
+    #       (2) 그 외 LLM 생성 ID → account_id+value 기반 deterministic 재작성
+    #       이렇게 하면: 다른 리소스 쿼리 → 다른 ID, 다른 세션 → 다른 ID
+    def _requested_id(prefix: str) -> str | None:
+        # target_identifiers 먼저 (이미 정규화된 식별자)
+        for k, v in canonical.target_identifiers.items():
+            if k.lower() == lowered and isinstance(v, str) and v.startswith(prefix):
+                return v
+        # request_params도 검색 — EC2 쿼리 프로토콜의 VolumeId.1 형식 처리
+        for candidate in [member_name, f"{member_name}.1", lowered, f"{lowered}.1"]:
+            pv = canonical.request_params.get(candidate)
+            if isinstance(pv, str) and pv.startswith(prefix):
+                return pv
+        return None
+
+    if lowered == "instanceid":
+        requested = _requested_id("i-")
+        if requested:
+            return requested  # 요청에서 명시한 instance ID echo
+        return "i-" + _det_hex(f"{account_id}:{value}", "instanceid", 17)
+    if lowered == "volumeid":
+        requested = _requested_id("vol-")
+        if requested:
+            return requested
+        return "vol-" + _det_hex(f"{account_id}:{value}", "volumeid", 17)
+    if lowered == "vpcid":
+        requested = _requested_id("vpc-")
+        if requested:
+            return requested
+        return "vpc-" + _det_hex(f"{account_id}:{value}", "vpcid", 17)
+    if lowered == "subnetid":
+        requested = _requested_id("subnet-")
+        if requested:
+            return requested
+        return "subnet-" + _det_hex(f"{account_id}:{value}", "subnetid", 17)
+    if lowered in {"groupid", "securitygroupid"}:
+        requested = _requested_id("sg-")
+        if requested:
+            return requested
+        return "sg-" + _det_hex(f"{account_id}:{value}", "securitygroupid", 17)
     # ReservedInstancesId는 UUID 형식 (rsvd- 등 잘못된 prefix 보정)
     if lowered == "reservedinstancesid" and not re.match(
         r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", value
@@ -851,14 +877,34 @@ def _det_hex(seed: str, field: str, length: int) -> str:
 
 
 def _get_resource_seed(canonical: CanonicalRequest, world_state: dict[str, Any]) -> str:
-    """Return a stable seed string tied to the primary resource being queried."""
-    for value in canonical.target_identifiers.values():
-        if isinstance(value, str) and re.match(r"^i-[0-9a-f]{8,17}$", value):
-            return value
+    """Return a stable seed string tied to the primary resource being queried.
+
+    Incorporates account_id (session-scoped) + resource identifiers (resource-scoped)
+    so that: (1) different resources → different seeds, (2) different sessions → different seeds.
+    """
+    account_id = str(
+        world_state.get("consistency_locks", {}).get("account_id", "default")
+    )
+    # target_identifiers: 정규화된 리소스 ID
+    id_values: list[str] = [str(v) for v in canonical.target_identifiers.values() if v]
+    # EC2 쿼리 프로토콜 VolumeId.1 / InstanceId.1 형식도 포함
+    if not id_values:
+        for k, v in canonical.request_params.items():
+            if (
+                isinstance(v, str)
+                and v
+                and any(t in k.lower() for t in ("id", "arn", "digest"))
+            ):
+                id_values.append(v)
+    if id_values:
+        vals = ":".join(sorted(id_values))
+        return f"{account_id}:{vals}"
+    # exposed_assets: 이전 응답에서 노출된 instance ID
     for asset in world_state.get("exposed_assets", []):
         if isinstance(asset, str) and re.match(r"^i-[0-9a-f]{8,17}$", asset):
-            return asset
-    return str(world_state.get("consistency_locks", {}).get("account_id", "default"))
+            return f"{account_id}:{asset}"
+    # fallback: account_id만으로도 세션 간 격리 보장
+    return account_id
 
 
 def _det_int(seed: str, field: str, max_val: int) -> int:
