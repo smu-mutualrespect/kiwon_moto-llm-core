@@ -439,6 +439,12 @@ def _normalize_string_hint(
     ):
         h = _det_hex(value, "reservedinstancesid", 32)
         return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+    # uploadId는 UUID 형식 (hex only, "example"·"demo" 등 placeholder 보정)
+    if lowered == "uploadid" and not re.match(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", value
+    ):
+        h = _det_hex(f"{account_id}:{value}", "uploadid", 32)
+        return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
     return value
 
 
@@ -577,7 +583,9 @@ def _generate_scalar_string(
             member_name, "sha256:" + _det_hex(seed, "digest", 64)
         )
     if "uploadid" in combined or "upload id" in combined:
-        return "upload-" + _det_hex(seed, "uploadid", 12)
+        # ECR uploadId는 UUID 형식 (hex only, no "upload-" prefix)
+        h = _det_hex(seed, "uploadid", 32)
+        return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
     if "jobid" in combined or "job id" in combined:
         return "job-" + _det_hex(seed, "jobid", 10)
     if "requestid" in combined or "request id" in combined:

@@ -71,6 +71,10 @@ VALID_INSTANCE_TYPES: set[str] = {
     "i3.large", "i3.xlarge", "i3.2xlarge", "i3.4xlarge",
     "p2.xlarge", "p2.8xlarge", "p3.2xlarge", "p3.8xlarge",
     "g4dn.xlarge", "g4dn.2xlarge", "g5.xlarge",
+    "a1.medium", "a1.large", "a1.xlarge", "a1.2xlarge", "a1.4xlarge",
+    "m6g.medium", "m6g.large", "m6g.xlarge", "m6g.2xlarge",
+    "c6g.medium", "c6g.large", "c6g.xlarge", "c6g.2xlarge",
+    "r6g.medium", "r6g.large", "r6g.xlarge", "r6g.2xlarge",
 }
 
 VALID_BEDROCK_MODEL_IDS: set[str] = {
@@ -131,7 +135,10 @@ _RESOURCE_ID_PATS: dict[str, re.Pattern] = {
 }
 
 _ACCOUNT_ID_FIELDS: set[str] = {"accountid", "ownerid", "awsaccountid", "customerid"}
-_REGION_FIELDS:     set[str] = {"region", "availabilityzone", "availabilityzoneid"}
+# availabilityzoneid는 use1-az1 형식으로 region과 다르므로 별도 집합으로 관리
+_REGION_FIELDS:     set[str] = {"region", "availabilityzone"}
+_AZ_ID_FIELDS:      set[str] = {"availabilityzoneid"}
+_AZ_ID_PAT = re.compile(r'^[a-z]{2,6}\d?-az\d$')  # e.g. use1-az1, euc1-az2
 
 # ── 테스트 케이스 정의 ────────────────────────────────────────────────────────
 TEST_CASES: list[tuple[str, str, list[str]]] = [
@@ -370,6 +377,14 @@ def _score_format(data: Any) -> DimScore:
             dim.record(
                 bool(re.match(r'^\d{12}$', value)),
                 issue=f"{key}: 계정 ID가 12자리 숫자가 아님 → '{value}'",
+            )
+            continue
+
+        # AZ ID 필드 (use1-az1 형식)
+        if low in _AZ_ID_FIELDS:
+            dim.record(
+                bool(_AZ_ID_PAT.match(value)),
+                issue=f"{key}: 유효하지 않은 AZ ID → '{value}'",
             )
             continue
 
