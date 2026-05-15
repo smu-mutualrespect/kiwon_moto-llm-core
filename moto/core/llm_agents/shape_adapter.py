@@ -407,6 +407,12 @@ def _normalize_string_hint(
         r"^sg-[0-9a-f]{8,17}$", value
     ):
         return "sg-" + _det_hex(value, "securitygroupid", 17)
+    # ReservedInstancesId는 UUID 형식 (rsvd- 등 잘못된 prefix 보정)
+    if lowered == "reservedinstancesid" and not re.match(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", value
+    ):
+        h = _det_hex(value, "reservedinstancesid", 32)
+        return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
     return value
 
 
@@ -417,16 +423,38 @@ def _rewrite_arn_account(
     canonical: CanonicalRequest,
 ) -> str:
     parts = value.split(":", 5)
-    if len(parts) >= 6:
+    if len(parts) < 6:
+        suffix = (
+            re.sub(r"[^A-Za-z0-9/_+=,.@-]+", "-", value).strip("-")
+            or canonical.operation.lower()
+        )
+        return f"arn:aws:{canonical.service}:{region}:{account_id}:{suffix}"
+
+    arn_service = parts[2]  # arn:aws:<service>:region:account:resource
+
+    # IAM/STS ARN: region 없음, account 있음  arn:aws:iam::123456789012:...
+    if arn_service in {"iam", "sts"}:
+        parts[3] = ""
+        parts[4] = account_id
+    # Bedrock foundation-model ARN: region 있음, account 없음
+    elif (
+        arn_service == "bedrock"
+        and len(parts) >= 6
+        and parts[5].startswith("foundation-model")
+    ):
+        parts[3] = region if not parts[3] or parts[3] in {"*"} else parts[3]
+        parts[4] = ""
+    # S3 ARN: region 없음, account 없음
+    elif arn_service == "s3":
+        parts[3] = ""
+        parts[4] = ""
+    else:
+        # 기본: account 설정, region이 비어있으면 현재 region으로 채움
         parts[4] = account_id
         if parts[3] in {"", "*"}:
             parts[3] = region
-        return ":".join(parts)
-    suffix = (
-        re.sub(r"[^A-Za-z0-9/_+=,.@-]+", "-", value).strip("-")
-        or canonical.operation.lower()
-    )
-    return f"arn:aws:{canonical.service}:{region}:{account_id}:{suffix}"
+
+    return ":".join(parts)
 
 
 def _generate_scalar_string(
@@ -482,6 +510,23 @@ def _generate_scalar_string(
         )
         if exposed:
             return exposed
+        # Bedrock foundation-model ARN: account 없이 region만 있어야 함
+        if canonical.service == "bedrock":
+            _known_model_ids = [
+                "amazon.titan-text-express-v1",
+                "anthropic.claude-3-sonnet-20240229-v1:0",
+                "meta.llama3-8b-instruct-v1:0",
+                "cohere.command-r-v1:0",
+            ]
+            _idx = int(_det_hex(seed, "bedrock_model_idx", 2), 16) % len(
+                _known_model_ids
+            )
+            return (
+                f"arn:aws:bedrock:{region}::foundation-model/{_known_model_ids[_idx]}"
+            )
+        # IAM ARN: region 없이 account만 있어야 함
+        if canonical.service in {"iam", "sts"}:
+            return f"arn:aws:{canonical.service}::{account_id}:{canonical.operation.lower()}/{_det_hex(seed, 'arn_suffix', 8)}"
         return f"arn:aws:{canonical.service}:{region}:{account_id}:{canonical.operation.lower()}/{_det_hex(seed, 'arn_suffix', 8)}"
     if lowered == "name":
         for key in [
@@ -519,6 +564,11 @@ def _generate_scalar_string(
             return direct
         if lowered == "registryid":
             return account_id
+        # AvailabilityZoneId: AZ zone ID 형식 (e.g. use1-az1, usw2-az2)
+        if lowered == "availabilityzoneid":
+            _az_prefix = _region_to_az_prefix(region)
+            _az_num = (int(_det_hex(seed, "azid", 2), 16) % 3) + 1
+            return f"{_az_prefix}-az{_az_num}"
         exposed_assets = list(world_state.get("exposed_assets", []))
         existing = _find_exposed_asset(lowered, exposed_assets)
         if existing:
@@ -527,8 +577,27 @@ def _generate_scalar_string(
             return "i-" + _det_hex(seed, "instanceid", 17)
         if lowered == "reservationid":
             return "r-" + _det_hex(seed, "reservationid", 8)
+        if lowered == "reservedinstancesid":
+            h = _det_hex(seed, "reservedinstancesid", 32)
+            return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+        if lowered == "volumeid":
+            return "vol-" + _det_hex(seed, "volumeid", 17)
         if lowered == "imageid":
             return "ami-" + _det_hex(seed, "imageid", 8)
+        # Bedrock modelId should look like a real foundation model ID
+        if lowered == "modelid" and canonical.service == "bedrock":
+            _bedrock_model_ids = [
+                "amazon.titan-text-express-v1",
+                "amazon.titan-text-lite-v1",
+                "anthropic.claude-3-sonnet-20240229-v1:0",
+                "anthropic.claude-3-haiku-20240307-v1:0",
+                "meta.llama3-8b-instruct-v1:0",
+                "cohere.command-r-v1:0",
+            ]
+            _midx = int(_det_hex(seed, "bedrock_modelid", 2), 16) % len(
+                _bedrock_model_ids
+            )
+            return _bedrock_model_ids[_midx]
         return f"{canonical.service}-{_det_hex(seed, 'generic_id', 8)}"
     if "repository" in combined and "name" in combined:
         return canonical.target_identifiers.get(member_name, "demo")
@@ -846,3 +915,48 @@ def _protected_members(canonical: CanonicalRequest, output_shape: Any) -> set[st
     elif operation_key == ("secretsmanager", "ValidateResourcePolicy"):
         protected.update({"PolicyValidationPassed"})
     return protected
+
+
+# AWS 리전 → AvailabilityZoneId 접두사 매핑
+# 형식: 리전 코드의 두 글자 약어 + 방향/위치 첫 글자 + 숫자 (e.g. us-east-1 → use1)
+_REGION_AZ_PREFIX: dict[str, str] = {
+    "us-east-1": "use1",
+    "us-east-2": "use2",
+    "us-west-1": "usw1",
+    "us-west-2": "usw2",
+    "eu-west-1": "euw1",
+    "eu-west-2": "euw2",
+    "eu-west-3": "euw3",
+    "eu-central-1": "euc1",
+    "eu-central-2": "euc2",
+    "eu-north-1": "eun1",
+    "eu-south-1": "eus1",
+    "eu-south-2": "eus2",
+    "ap-east-1": "ape1",
+    "ap-northeast-1": "apne1",
+    "ap-northeast-2": "apne2",
+    "ap-northeast-3": "apne3",
+    "ap-southeast-1": "apse1",
+    "ap-southeast-2": "apse2",
+    "ap-southeast-3": "apse3",
+    "ap-south-1": "aps1",
+    "ap-south-2": "aps2",
+    "ca-central-1": "cac1",
+    "sa-east-1": "sae1",
+    "me-south-1": "mes1",
+    "me-central-1": "mec1",
+    "af-south-1": "afs1",
+}
+
+
+def _region_to_az_prefix(region: str) -> str:
+    """Convert AWS region name to AvailabilityZoneId prefix (e.g. us-east-1 → use1)."""
+    if region in _REGION_AZ_PREFIX:
+        return _REGION_AZ_PREFIX[region]
+    # 알 수 없는 리전은 하이픈 제거 후 앞 4자 사용 (fallback)
+    parts = region.split("-")
+    if len(parts) >= 3:
+        # <geo>-<direction>-<num> 형식
+        prefix = parts[0][:2] + parts[1][:1] + parts[-1]
+        return prefix[:5]
+    return re.sub(r"[^a-z0-9]", "", region)[:4]

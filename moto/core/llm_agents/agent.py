@@ -42,6 +42,37 @@ _ERROR_BODIES: dict[str, Any] = {
 }
 
 
+def _try_xml_fallback(canonical: CanonicalRequest) -> str:
+    """XML 프로토콜 서비스에서 agent 응답 실패 시 serializer로 최소 유효 응답 생성.
+
+    JSON 에러를 그대로 반환하면 botocore XML 파서가 실패하므로,
+    shape_adapter로 필수 필드를 채운 XML 응답을 생성한다.
+    """
+    try:
+        from moto.core.serialize import get_serializer_class
+        from moto.core.utils import get_service_model
+
+        svc_model = get_service_model(canonical.service)
+        protocol = svc_model.metadata.get("protocol", "json")
+        if protocol not in ("query", "rest-xml", "ec2"):
+            return ""
+
+        from .runtime.planner import DEFAULT_OUTPUT
+        from .shape_adapter import adapt_response_plan
+        from .tools import build_response_plan_tool
+
+        # DEFAULT_OUTPUT(error_mode="none")으로 최소 성공 플랜 생성
+        response_plan = build_response_plan_tool(canonical, DEFAULT_OUTPUT, {}, "")
+        field_values, _ = adapt_response_plan(canonical, response_plan, {})
+        op_model = svc_model.operation_model(canonical.operation)
+        serializer_cls = get_serializer_class(canonical.service, protocol)
+        serializer = serializer_cls(operation_model=op_model)
+        result = serializer.serialize(field_values)
+        return str(result.get("body", ""))
+    except Exception:
+        return ""
+
+
 def handle_aws_request(
     service: Optional[str],
     action: Optional[str],
@@ -74,10 +105,11 @@ def handle_aws_request(
     rendered_meta = run_result.rendered_meta
 
     if not response_body:
-        error_fn = _ERROR_BODIES.get(
+        # XML 프로토콜 서비스(STS, EC2, IAM)에 JSON 에러를 반환하면 botocore XML 파서가 실패한다.
+        # serializer로 최소 유효 응답을 생성해 CLI 파싱 오류를 방지한다.
+        response_body = _try_xml_fallback(canonical) or _ERROR_BODIES.get(
             agent_output.error_mode, _ERROR_BODIES["access_denied"]
-        )
-        response_body = error_fn(canonical.service, canonical.operation)
+        )(canonical.service, canonical.operation)
         rendered_meta = {"assets": []}  # type: ignore[assignment]
 
     add_to_session_history_tool(

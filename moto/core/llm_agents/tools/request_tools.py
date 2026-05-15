@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
-
 # SigV4 signing service 이름과 botocore service id가 다른 경우 fallback normalizer에서 보정한다.
 _SIGNING_SERVICE_ALIASES = {
     # access-analyzer는 signing name이고 accessanalyzer는 botocore service id다.

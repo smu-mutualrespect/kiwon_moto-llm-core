@@ -45,6 +45,9 @@ _HIGH_INTERACTION_OPERATIONS: frozenset[tuple[str, str]] = frozenset(
         ("ssm", "ResumeSession"),
         ("ssm", "TerminateSession"),
         ("ecs", "ExecuteCommand"),
+        # STS — moto가 XML 프로토콜인 STS에 JSON 에러를 반환하므로 항상 agent가 처리
+        # 공격자가 권한 에러를 해석하는 데 쓰는 고위험 명령이기도 함
+        ("sts", "DecodeAuthorizationMessage"),
     }
 )
 
@@ -239,7 +242,7 @@ def _get_xml_body_wire_names(output_shape: Any) -> set[str]:
 _INSTANCE_ID_RE = re.compile(r"^i-[0-9a-f]{8,17}$")
 _VOLUME_ID_RE = re.compile(r"^vol-[0-9a-f]{8,17}$")
 _ACCOUNT_ID_RE = re.compile(r"^\d{12}$")
-_ARN_RE = re.compile(r"^arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:\d{12}:")
+_ARN_RE = re.compile(r"^arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:(\d{12})?:")
 
 # 필드명 → 검증 규칙 (소문자 키 기준)
 _FIELD_FORMAT_RULES: dict[str, tuple[re.Pattern[str], str]] = {
@@ -314,8 +317,15 @@ def _validate_world_state_consistency(
     world_state: dict[str, Any],
 ) -> tuple[bool, str]:
     account_id = str(world_state.get("consistency_locks", {}).get("account_id", ""))
-    if "arn:aws:" in rendered_body and account_id and account_id not in rendered_body:
-        return False, "world-state validation failed: account_id lock mismatch"
+    if not account_id:
+        return True, "ok"
+    # Only fail if the body contains an ARN with a 12-digit account component that
+    # doesn't match our session account.  ARNs without an account component
+    # (e.g. arn:aws:bedrock:region::foundation-model/... or arn:aws:s3:::bucket)
+    # are legitimately account-free and must not be rejected by this check.
+    if re.search(r"arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:\d{12}:", rendered_body):
+        if account_id not in rendered_body:
+            return False, "world-state validation failed: account_id lock mismatch"
     return True, "ok"
 
 
