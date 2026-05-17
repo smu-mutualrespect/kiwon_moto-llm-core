@@ -98,6 +98,7 @@ def get_world_state_tool(session_id: str, headers: dict[str, Any]) -> dict[str, 
                 "known_names": {},
                 "agent_responses": [],
                 "response_cache": {},
+                "resource_registry": {},
                 "seen_pagination_tokens": [],
                 "session_start_time": datetime.now(timezone.utc).strftime(
                     "%Y-%m-%dT%H:%M:%SZ"
@@ -163,6 +164,11 @@ def update_world_state_tool(
         known_names = dict(next_state.get("known_names", {}))
         _merge_known_names(known_names, field_values, canonical.service)
         next_state["known_names"] = known_names
+        resource_registry = dict(next_state.get("resource_registry", {}))
+        _merge_resource_registry(resource_registry, canonical, field_values)
+        next_state["resource_registry"] = resource_registry
+        if _is_delete_operation(canonical):
+            _invalidate_read_cache(next_state, canonical)
 
     # Cache full field_values for read operations so repeated calls return identical results
     if field_values and _should_cache_operation(canonical.operation):
@@ -204,6 +210,7 @@ def record_native_interaction_tool(
         next_state.setdefault("exposed_roles", ["ReadOnlyOpsRole"])
         next_state.setdefault("credibility_level", "medium")
         next_state.setdefault("risk_score", 0.2)
+        next_state.setdefault("resource_registry", {})
         next_state.setdefault(
             "consistency_locks",
             {
@@ -315,6 +322,123 @@ def _merge_known_names(
     elif isinstance(field_values, list):
         for item in field_values:
             _merge_known_names(known_names, item, service)
+
+
+_DELETE_OPERATION_PREFIXES = (
+    "delete",
+    "remove",
+    "terminate",
+    "deregister",
+    "detach",
+    "revoke",
+    "disassociate",
+    "unsubscribe",
+)
+
+_AWS_REGION_RE = re.compile(
+    r"^(us|eu|ap|sa|ca|me|af|il|mx)-(north|south|east|west|central|"
+    r"northeast|southeast|northwest|southwest)-\d+[a-z]?$"
+)
+
+
+def _is_delete_operation(canonical: CanonicalRequest) -> bool:
+    return canonical.operation.lower().startswith(_DELETE_OPERATION_PREFIXES)
+
+
+def _merge_resource_registry(
+    registry: dict[str, Any], canonical: CanonicalRequest, field_values: Any
+) -> None:
+    identity_keys = _resource_identity_keys(canonical)
+    if not identity_keys:
+        return
+
+    is_delete = _is_delete_operation(canonical)
+
+    extracted: dict[str, str] = {}
+    for key, value in _iter_resource_leaf_strings(field_values):
+        lowered = key.lower()
+        if not value:
+            continue
+        if lowered in _SKIP_NAME_KEYS:
+            continue
+        if lowered.endswith("arn") and value.startswith("arn:aws:"):
+            extracted.setdefault(key, value)
+            extracted.setdefault("arn", value)
+        elif lowered.endswith("id") and _looks_like_resource_id(value):
+            extracted.setdefault(key, value)
+            extracted.setdefault("id", value)
+        elif (lowered == "name" or lowered.endswith("name")) and value:
+            extracted.setdefault(key, value)
+            extracted.setdefault("name", value)
+
+    if not extracted and not is_delete:
+        return
+
+    for identity_key in identity_keys:
+        current = dict(registry.get(identity_key, {}))
+        for key, value in extracted.items():
+            current.setdefault(key, value)
+        if is_delete:
+            current["__deleted__"] = True
+        registry[identity_key] = current
+
+
+def _invalidate_read_cache(state: dict[str, Any], canonical: CanonicalRequest) -> None:
+    """Delete 이후 같은 서비스의 read cache를 제거해서 삭제 후 조회가 stale 응답을 반환하지 않게 한다."""
+    response_cache = dict(state.get("response_cache", {}))
+    if not response_cache:
+        return
+    prefix = f"{canonical.service}:"
+    keys_to_remove = [k for k in response_cache if k.startswith(prefix)]
+    for key in keys_to_remove:
+        del response_cache[key]
+    state["response_cache"] = response_cache
+
+
+def _resource_identity_keys(canonical: CanonicalRequest) -> list[str]:
+    keys: list[str] = []
+    for source in (canonical.target_identifiers, canonical.request_params):
+        for key, value in source.items():
+            if isinstance(value, (dict, list)) or value in (None, ""):
+                continue
+            lowered = str(key).lower().split(".")[-1]
+            if lowered.isdigit():
+                continue
+            if any(
+                token in lowered
+                for token in ("name", "id", "arn", "repository", "secret", "user")
+            ):
+                text = str(value)
+                for registry_key in (
+                    f"{canonical.service}:{lowered}:{text}",
+                    f"{canonical.service}:primary:{text}",
+                ):
+                    if registry_key not in keys:
+                        keys.append(registry_key)
+    return keys
+
+
+def _iter_resource_leaf_strings(obj: Any, parent_key: str = "") -> list[tuple[str, str]]:
+    results: list[tuple[str, str]] = []
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if isinstance(value, str):
+                results.append((str(key), value))
+            else:
+                results.extend(_iter_resource_leaf_strings(value, str(key)))
+    elif isinstance(obj, list):
+        for item in obj:
+            results.extend(_iter_resource_leaf_strings(item, parent_key))
+    return results
+
+
+def _looks_like_resource_id(value: str) -> bool:
+    if _AWS_REGION_RE.match(value):
+        return False
+    return bool(
+        re.match(r"^[a-z][a-z0-9-]*-[A-Za-z0-9-]{4,}$", value)
+        or re.match(r"^[0-9a-f]{8}-[0-9a-f-]{13,}$", value)
+    )
 
 
 _PAGINATION_KEYS = {"nexttoken", "marker", "nextpage", "nextmarker", "paginationtoken"}

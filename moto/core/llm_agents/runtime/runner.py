@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ..shape_adapter import adapt_response_plan
 from ..tools import build_response_plan_tool, validate_rendered_response_tool
 from ..tools.render_tools import serialize_response_tool
 from ..tools.request_tools import CanonicalRequest
+from ..tools.state_tools import _resource_identity_keys
 from .planner import DEFAULT_OUTPUT, AgentOutput, build_agent_prompt, parse_agent_output
 from .provider import _load_dotenv_if_present, call_gpt_api_with_meta, select_provider
 from .tool_executor import execute_agent_tool_requests
@@ -46,6 +47,7 @@ def run_agent_loop(
             latest_observation=latest_observation,
             available_tools=available_tools,
         )
+        agent_output = _stabilize_agent_output(canonical, world_state, agent_output)
         last_planner_meta = dict(planner_meta)
         last_planner_meta["attempt"] = attempt
         if tool_observations:
@@ -172,3 +174,55 @@ def _call_agent_once(
             },
         )
     return parse_agent_output(raw), raw, meta
+
+
+def _stabilize_agent_output(
+    canonical: CanonicalRequest,
+    world_state: dict[str, Any],
+    agent_output: AgentOutput,
+) -> AgentOutput:
+    from ..tools.state_tools import _is_delete_operation
+
+    # not_found → none: 세션에서 이미 보여준 resource라면 LLM의 not_found 판단을 덮어씀
+    if agent_output.error_mode == "not_found":
+        if _has_registered_resource_identity(canonical, world_state):
+            return replace(agent_output, error_mode="none", response_posture="sparse")
+
+    # none → not_found: 삭제된 resource에 대한 read 요청은 not_found로 강제
+    if agent_output.error_mode == "none" and not _is_delete_operation(canonical):
+        if _resource_is_tombstoned(canonical, world_state):
+            return replace(agent_output, error_mode="not_found")
+
+    return agent_output
+
+
+def _has_registered_resource_identity(
+    canonical: CanonicalRequest,
+    world_state: dict[str, Any],
+) -> bool:
+    registry = world_state.get("resource_registry")
+    if not isinstance(registry, dict):
+        return False
+    for key in _resource_identity_keys(canonical):
+        values = registry.get(key)
+        if not isinstance(values, dict):
+            continue
+        if values.get("__deleted__"):
+            continue
+        if any(isinstance(v, str) and v for k, v in values.items() if k != "__deleted__"):
+            return True
+    return False
+
+
+def _resource_is_tombstoned(
+    canonical: CanonicalRequest,
+    world_state: dict[str, Any],
+) -> bool:
+    registry = world_state.get("resource_registry")
+    if not isinstance(registry, dict):
+        return False
+    for key in _resource_identity_keys(canonical):
+        values = registry.get(key)
+        if isinstance(values, dict) and values.get("__deleted__"):
+            return True
+    return False

@@ -1,42 +1,498 @@
 [
-  {"id":"bedrock_list_foundation_models","command":"aws bedrock list-foundation-models","service":"bedrock","operation":"ListFoundationModels","protocol_family":"json","required_core_fields":["modelSummaries"],"body":"{}","headers":{}},
-  {"id":"ec2_monitor_instances","command":"aws ec2 monitor-instances --instance-ids i-1234567890abcdef0","service":"ec2","operation":"MonitorInstances","protocol_family":"xml","required_core_fields":["instancesSet"],"body":"Action=MonitorInstances&InstanceId.1=i-1234567890abcdef0","headers":{}},
-  {"id":"ec2_unmonitor_instances","command":"aws ec2 unmonitor-instances --instance-ids i-1234567890abcdef0","service":"ec2","operation":"UnmonitorInstances","protocol_family":"xml","required_core_fields":["instancesSet"],"body":"Action=UnmonitorInstances&InstanceId.1=i-1234567890abcdef0","headers":{}},
-  {"id":"ec2_describe_reserved_instances","command":"aws ec2 describe-reserved-instances","service":"ec2","operation":"DescribeReservedInstances","protocol_family":"xml","required_core_fields":["reservedInstancesSet"],"body":"Action=DescribeReservedInstances","headers":{}},
-  {"id":"ec2_describe_reserved_instances_listings","command":"aws ec2 describe-reserved-instances-listings","service":"ec2","operation":"DescribeReservedInstancesListings","protocol_family":"xml","required_core_fields":["reservedInstancesListingsSet"],"body":"Action=DescribeReservedInstancesListings","headers":{}},
-  {"id":"ec2_purchase_reserved_instances_offering","command":"aws ec2 purchase-reserved-instances-offering --reserved-instances-offering-id aaaaaa11-bbbb-cccc-ddd-example1 --instance-count 1","service":"ec2","operation":"PurchaseReservedInstancesOffering","protocol_family":"xml","required_core_fields":["reservedInstancesId"],"body":"Action=PurchaseReservedInstancesOffering&ReservedInstancesOfferingId=aaaaaa11-bbbb-cccc-ddd-example1&InstanceCount=1","headers":{}},
-  {"id":"ec2_describe_volume_status","command":"aws ec2 describe-volume-status --volume-ids vol-1234567890abcdef0","service":"ec2","operation":"DescribeVolumeStatus","protocol_family":"xml","required_core_fields":["volumeStatusSet"],"body":"Action=DescribeVolumeStatus&VolumeId.1=vol-1234567890abcdef0","headers":{}},
-  {"id":"ec2_modify_volume_attribute","command":"aws ec2 modify-volume-attribute --volume-id vol-1234567890abcdef0 --auto-enable-io","service":"ec2","operation":"ModifyVolumeAttribute","protocol_family":"xml","required_core_fields":[],"body":"Action=ModifyVolumeAttribute&VolumeId=vol-1234567890abcdef0&AutoEnableIO=true","headers":{}},
-  {"id":"ec2_create_spot_datafeed_subscription","command":"aws ec2 create-spot-datafeed-subscription --bucket my-honeypot-bucket","service":"ec2","operation":"CreateSpotDatafeedSubscription","protocol_family":"xml","required_core_fields":["spotDatafeedSubscription"],"body":"Action=CreateSpotDatafeedSubscription&Bucket=my-honeypot-bucket","headers":{}},
-  {"id":"ec2_describe_bundle_tasks","command":"aws ec2 describe-bundle-tasks","service":"ec2","operation":"DescribeBundleTasks","protocol_family":"xml","required_core_fields":["bundleInstanceTasksSet"],"body":"Action=DescribeBundleTasks","headers":{}},
-  {"id":"resource_explorer_list_indexes","command":"aws resource-explorer-2 list-indexes","service":"resource-explorer-2","operation":"ListIndexes","protocol_family":"json","required_core_fields":["Indexes"],"body":"{}","headers":{"X-Amz-Target":"AWSResourceExplorer.ListIndexes"}},
-  {"id":"resource_explorer_list_views","command":"aws resource-explorer-2 list-views","service":"resource-explorer-2","operation":"ListViews","protocol_family":"json","required_core_fields":["Views"],"body":"{}","headers":{"X-Amz-Target":"AWSResourceExplorer.ListViews"}},
-  {"id":"resource_explorer_search","command":"aws resource-explorer-2 search --query-string \"*\" --view-arn <view-arn>","service":"resource-explorer-2","operation":"Search","protocol_family":"json","required_core_fields":["Resources"],"body":"{\"QueryString\":\"*\",\"ViewArn\":\"<view-arn>\"}","headers":{"X-Amz-Target":"AWSResourceExplorer.Search"}},
-  {"id":"support_describe_services","command":"aws support describe-services --region us-east-1","service":"support","operation":"DescribeServices","protocol_family":"json","required_core_fields":["services"],"body":"{}","headers":{}},
-  {"id":"support_describe_trusted_advisor_check_result","command":"aws support describe-trusted-advisor-check-result --check-id <check-id> --language en --region us-east-1","service":"support","operation":"DescribeTrustedAdvisorCheckResult","protocol_family":"json","required_core_fields":["result"],"body":"{\"checkId\":\"<check-id>\",\"language\":\"en\"}","headers":{}},
-  {"id":"support_describe_trusted_advisor_check_summaries","command":"aws support describe-trusted-advisor-check-summaries --check-ids <check-id> --region us-east-1","service":"support","operation":"DescribeTrustedAdvisorCheckSummaries","protocol_family":"json","required_core_fields":["summaries"],"body":"{\"checkIds\":[\"<check-id>\"]}","headers":{}},
-  {"id":"eks_list_addons","command":"aws eks list-addons --cluster-name <cluster-name>","service":"eks","operation":"ListAddons","protocol_family":"json","required_core_fields":["addons"],"body":"{\"clusterName\":\"<cluster-name>\"}","headers":{}},
-  {"id":"eks_describe_addon_versions","command":"aws eks describe-addon-versions","service":"eks","operation":"DescribeAddonVersions","protocol_family":"json","required_core_fields":["addons"],"body":"{}","headers":{}},
-  {"id":"ssm_start_session","command":"aws ssm start-session --target <instance-id>","service":"ssm","operation":"StartSession","protocol_family":"json","required_core_fields":["SessionId","TokenValue","StreamUrl"],"body":"{\"Target\":\"<instance-id>\"}","headers":{}},
-  {"id":"ecs_execute_command","command":"aws ecs execute-command --cluster <cluster-name> --task <task-id> --container <container-name> --interactive --command \"/bin/sh\"","service":"ecs","operation":"ExecuteCommand","protocol_family":"json","required_core_fields":["session"],"body":"{\"cluster\":\"<cluster-name>\",\"task\":\"<task-id>\",\"container\":\"<container-name>\",\"interactive\":true,\"command\":\"/bin/sh\"}","headers":{}},
-  {"id":"billingconductor_list_billing_groups","command":"aws billingconductor list-billing-groups","service":"billingconductor","operation":"ListBillingGroups","protocol_family":"json","required_core_fields":["BillingGroups"],"body":"{}","headers":{}},
-  {"id":"frauddetector_get_detectors","command":"aws frauddetector get-detectors","service":"frauddetector","operation":"GetDetectors","protocol_family":"json","required_core_fields":["detectors"],"body":"{}","headers":{}},
-  {"id":"detective_list_graphs","command":"aws detective list-graphs","service":"detective","operation":"ListGraphs","protocol_family":"json","required_core_fields":["GraphList"],"body":"{}","headers":{}},
-  {"id":"auditmanager_list_assessments","command":"aws auditmanager list-assessments","service":"auditmanager","operation":"ListAssessments","protocol_family":"json","required_core_fields":["assessmentMetadata"],"body":"{}","headers":{}},
-  {"id":"outposts_list_outposts","command":"aws outposts list-outposts","service":"outposts","operation":"ListOutposts","protocol_family":"json","required_core_fields":["Outposts"],"body":"{}","headers":{}},
-  {"id":"appflow_list_flows","command":"aws appflow list-flows","service":"appflow","operation":"ListFlows","protocol_family":"json","required_core_fields":["flows"],"body":"{}","headers":{}},
-  {"id":"omics_list_runs","command":"aws omics list-runs","service":"omics","operation":"ListRuns","protocol_family":"json","required_core_fields":["items"],"body":"{}","headers":{}},
-  {"id":"mgn_describe_source_servers","command":"aws mgn describe-source-servers","service":"mgn","operation":"DescribeSourceServers","protocol_family":"json","required_core_fields":["items"],"body":"{}","headers":{}},
-  {"id":"codeguru_reviewer_list_repository_associations","command":"aws codeguru-reviewer list-repository-associations","service":"codeguru-reviewer","operation":"ListRepositoryAssociations","protocol_family":"json","required_core_fields":["RepositoryAssociationSummaries"],"body":"{}","headers":{}},
-  {"id":"backup_gateway_list_gateways","command":"aws backup-gateway list-gateways","service":"backup-gateway","operation":"ListGateways","protocol_family":"json","required_core_fields":["Gateways"],"body":"{}","headers":{}},
-  {"id":"ssm_describe_instance_information","command":"aws ssm describe-instance-information","service":"ssm","operation":"DescribeInstanceInformation","protocol_family":"json","required_core_fields":["InstanceInformationList"],"body":"Action=DescribeInstanceInformation&Version=2014-11-06","headers":{"Content-Type":"application/x-www-form-urlencoded; charset=utf-8"}},
-  {"id":"ecr_batch_check_layer_availability","command":"aws ecr batch-check-layer-availability --repository-name demo --layer-digests sha256:abc","service":"ecr","operation":"BatchCheckLayerAvailability","protocol_family":"json","required_core_fields":["layers"],"body":"{\"repositoryName\":\"demo\",\"layerDigests\":[\"sha256:abc\"]}","headers":{"X-Amz-Target":"AmazonEC2ContainerRegistry_V20150921.BatchCheckLayerAvailability"}},
-  {"id":"ecr_get_download_url_for_layer","command":"aws ecr get-download-url-for-layer --repository-name demo --layer-digest sha256:abc","service":"ecr","operation":"GetDownloadUrlForLayer","protocol_family":"json","required_core_fields":["downloadUrl","layerDigest"],"body":"{\"repositoryName\":\"demo\",\"layerDigest\":\"sha256:abc\"}","headers":{"X-Amz-Target":"AmazonEC2ContainerRegistry_V20150921.GetDownloadUrlForLayer"}},
-  {"id":"ecr_initiate_layer_upload","command":"aws ecr initiate-layer-upload --repository-name demo","service":"ecr","operation":"InitiateLayerUpload","protocol_family":"json","required_core_fields":["uploadId","partSize"],"body":"{\"repositoryName\":\"demo\"}","headers":{"X-Amz-Target":"AmazonEC2ContainerRegistry_V20150921.InitiateLayerUpload"}},
-  {"id":"ecr_complete_layer_upload","command":"aws ecr complete-layer-upload --repository-name demo --upload-id test --layer-digests sha256:abc","service":"ecr","operation":"CompleteLayerUpload","protocol_family":"json","required_core_fields":["uploadId","layerDigest","repositoryName"],"body":"{\"repositoryName\":\"demo\",\"uploadId\":\"test\",\"layerDigests\":[\"sha256:abc\"],\"layerDigest\":\"sha256:abc\"}","headers":{"X-Amz-Target":"AmazonEC2ContainerRegistry_V20150921.CompleteLayerUpload"}},
-  {"id":"iam_get_context_keys_for_principal_policy","command":"aws iam get-context-keys-for-principal-policy --policy-source-arn arn:aws:iam::123456789012:user/victim-admin","service":"iam","operation":"GetContextKeysForPrincipalPolicy","protocol_family":"xml","required_core_fields":["ContextKeyNames"],"body":"Action=GetContextKeysForPrincipalPolicy&PolicySourceArn=arn:aws:iam::123456789012:user/victim-admin","headers":{}},
-  {"id":"iam_list_service_specific_credentials","command":"aws iam list-service-specific-credentials --user-name victim-admin","service":"iam","operation":"ListServiceSpecificCredentials","protocol_family":"xml","required_core_fields":["ServiceSpecificCredentials"],"body":"Action=ListServiceSpecificCredentials&UserName=victim-admin","headers":{}},
-  {"id":"iam_generate_service_last_accessed_details","command":"aws iam generate-service-last-accessed-details --arn arn:aws:iam::123456789012:user/victim-admin","service":"iam","operation":"GenerateServiceLastAccessedDetails","protocol_family":"xml","required_core_fields":["JobId"],"body":"Action=GenerateServiceLastAccessedDetails&Arn=arn:aws:iam::123456789012:user/victim-admin","headers":{}},
-  {"id":"secretsmanager_validate_resource_policy","command":"aws secretsmanager validate-resource-policy --secret-id prod/db/password --resource-policy '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":\"*\"}]}'","service":"secretsmanager","operation":"ValidateResourcePolicy","protocol_family":"json","required_core_fields":["PolicyValidationPassed"],"body":"{\"SecretId\":\"prod/db/password\",\"ResourcePolicy\":\"{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":\\\"*\\\",\\\"Action\\\":\\\"secretsmanager:GetSecretValue\\\",\\\"Resource\\\":\\\"*\\\"}]}\"}","headers":{}},
-  {"id":"sts_decode_authorization_message","command":"aws sts decode-authorization-message --encoded-message ZmFrZS1hdXRob3JpemF0aW9uLW1lc3NhZ2U=","service":"sts","operation":"DecodeAuthorizationMessage","protocol_family":"xml","required_core_fields":["DecodedMessage"],"body":"Action=DecodeAuthorizationMessage&EncodedMessage=ZmFrZS1hdXRob3JpemF0aW9uLW1lc3NhZ2U=","headers":{}}
+  {
+    "id": "bedrock_list_foundation_models",
+    "command": "aws bedrock list-foundation-models",
+    "service": "bedrock",
+    "operation": "ListFoundationModels",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "modelSummaries"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "ec2_monitor_instances",
+    "command": "aws ec2 monitor-instances --instance-ids i-1234567890abcdef0",
+    "service": "ec2",
+    "operation": "MonitorInstances",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "instancesSet"
+    ],
+    "body": "Action=MonitorInstances&InstanceId.1=i-1234567890abcdef0",
+    "headers": {}
+  },
+  {
+    "id": "ec2_unmonitor_instances",
+    "command": "aws ec2 unmonitor-instances --instance-ids i-1234567890abcdef0",
+    "service": "ec2",
+    "operation": "UnmonitorInstances",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "instancesSet"
+    ],
+    "body": "Action=UnmonitorInstances&InstanceId.1=i-1234567890abcdef0",
+    "headers": {}
+  },
+  {
+    "id": "ec2_describe_reserved_instances",
+    "command": "aws ec2 describe-reserved-instances",
+    "service": "ec2",
+    "operation": "DescribeReservedInstances",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "reservedInstancesSet"
+    ],
+    "body": "Action=DescribeReservedInstances",
+    "headers": {}
+  },
+  {
+    "id": "ec2_describe_reserved_instances_listings",
+    "command": "aws ec2 describe-reserved-instances-listings",
+    "service": "ec2",
+    "operation": "DescribeReservedInstancesListings",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "reservedInstancesListingsSet"
+    ],
+    "body": "Action=DescribeReservedInstancesListings",
+    "headers": {}
+  },
+  {
+    "id": "ec2_purchase_reserved_instances_offering",
+    "command": "aws ec2 purchase-reserved-instances-offering --reserved-instances-offering-id aaaaaa11-bbbb-cccc-ddd-example1 --instance-count 1",
+    "service": "ec2",
+    "operation": "PurchaseReservedInstancesOffering",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "reservedInstancesId"
+    ],
+    "body": "Action=PurchaseReservedInstancesOffering&ReservedInstancesOfferingId=aaaaaa11-bbbb-cccc-ddd-example1&InstanceCount=1",
+    "headers": {}
+  },
+  {
+    "id": "ec2_describe_volume_status",
+    "command": "aws ec2 describe-volume-status --volume-ids vol-1234567890abcdef0",
+    "service": "ec2",
+    "operation": "DescribeVolumeStatus",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "volumeStatusSet"
+    ],
+    "body": "Action=DescribeVolumeStatus&VolumeId.1=vol-1234567890abcdef0",
+    "headers": {}
+  },
+  {
+    "id": "ec2_modify_volume_attribute",
+    "command": "aws ec2 modify-volume-attribute --volume-id vol-1234567890abcdef0 --auto-enable-io",
+    "service": "ec2",
+    "operation": "ModifyVolumeAttribute",
+    "protocol_family": "xml",
+    "required_core_fields": [],
+    "body": "Action=ModifyVolumeAttribute&VolumeId=vol-1234567890abcdef0&AutoEnableIO=true",
+    "headers": {}
+  },
+  {
+    "id": "ec2_create_spot_datafeed_subscription",
+    "command": "aws ec2 create-spot-datafeed-subscription --bucket my-honeypot-bucket",
+    "service": "ec2",
+    "operation": "CreateSpotDatafeedSubscription",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "spotDatafeedSubscription"
+    ],
+    "body": "Action=CreateSpotDatafeedSubscription&Bucket=my-honeypot-bucket",
+    "headers": {}
+  },
+  {
+    "id": "ec2_describe_bundle_tasks",
+    "command": "aws ec2 describe-bundle-tasks",
+    "service": "ec2",
+    "operation": "DescribeBundleTasks",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "bundleInstanceTasksSet"
+    ],
+    "body": "Action=DescribeBundleTasks",
+    "headers": {}
+  },
+  {
+    "id": "resource_explorer_list_indexes",
+    "command": "aws resource-explorer-2 list-indexes",
+    "service": "resource-explorer-2",
+    "operation": "ListIndexes",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "Indexes"
+    ],
+    "body": "{}",
+    "headers": {
+      "X-Amz-Target": "AWSResourceExplorer.ListIndexes"
+    }
+  },
+  {
+    "id": "resource_explorer_list_views",
+    "command": "aws resource-explorer-2 list-views",
+    "service": "resource-explorer-2",
+    "operation": "ListViews",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "Views"
+    ],
+    "body": "{}",
+    "headers": {
+      "X-Amz-Target": "AWSResourceExplorer.ListViews"
+    }
+  },
+  {
+    "id": "resource_explorer_search",
+    "command": "aws resource-explorer-2 search --query-string \"*\" --view-arn <view-arn>",
+    "service": "resource-explorer-2",
+    "operation": "Search",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "Resources"
+    ],
+    "body": "{\"QueryString\":\"*\",\"ViewArn\":\"<view-arn>\"}",
+    "headers": {
+      "X-Amz-Target": "AWSResourceExplorer.Search"
+    }
+  },
+  {
+    "id": "accessanalyzer_list_analyzers",
+    "command": "aws accessanalyzer list-analyzers --region us-east-1",
+    "service": "accessanalyzer",
+    "operation": "ListAnalyzers",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "analyzers"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "accessanalyzer_list_findings",
+    "command": "aws accessanalyzer list-findings --analyzer-arn <analyzer-arn> --region us-east-1",
+    "service": "accessanalyzer",
+    "operation": "ListFindings",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "findings"
+    ],
+    "body": "{\"analyzerArn\":\"<analyzer-arn>\"}",
+    "headers": {}
+  },
+  {
+    "id": "cloudformation_list_stacks",
+    "command": "aws cloudformation list-stacks",
+    "service": "cloudformation",
+    "operation": "ListStacks",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "StackSummaries"
+    ],
+    "body": "Action=ListStacks",
+    "headers": {}
+  },
+  {
+    "id": "cloudformation_describe_stack_resources",
+    "command": "aws cloudformation describe-stack-resources --stack-name <stack-name>",
+    "service": "cloudformation",
+    "operation": "DescribeStackResources",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "StackResources"
+    ],
+    "body": "Action=DescribeStackResources&StackName=<stack-name>",
+    "headers": {}
+  },
+  {
+    "id": "organizations_list_accounts",
+    "command": "aws organizations list-accounts",
+    "service": "organizations",
+    "operation": "ListAccounts",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "Accounts"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "organizations_list_roots",
+    "command": "aws organizations list-roots",
+    "service": "organizations",
+    "operation": "ListRoots",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "Roots"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "backup_list_backup_vaults",
+    "command": "aws backup list-backup-vaults --region us-east-1",
+    "service": "backup",
+    "operation": "ListBackupVaults",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "BackupVaultList"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "billingconductor_list_billing_groups",
+    "command": "aws billingconductor list-billing-groups",
+    "service": "billingconductor",
+    "operation": "ListBillingGroups",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "BillingGroups"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "frauddetector_get_detectors",
+    "command": "aws frauddetector get-detectors",
+    "service": "frauddetector",
+    "operation": "GetDetectors",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "detectors"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "detective_list_graphs",
+    "command": "aws detective list-graphs",
+    "service": "detective",
+    "operation": "ListGraphs",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "GraphList"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "auditmanager_list_assessments",
+    "command": "aws auditmanager list-assessments",
+    "service": "auditmanager",
+    "operation": "ListAssessments",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "assessmentMetadata"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "outposts_list_outposts",
+    "command": "aws outposts list-outposts",
+    "service": "outposts",
+    "operation": "ListOutposts",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "Outposts"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "appflow_list_flows",
+    "command": "aws appflow list-flows",
+    "service": "appflow",
+    "operation": "ListFlows",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "flows"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "healthomics_list_runs",
+    "command": "aws healthomics list-runs",
+    "service": "omics",
+    "operation": "ListRuns",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "items"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "mgn_describe_source_servers",
+    "command": "aws mgn describe-source-servers",
+    "service": "mgn",
+    "operation": "DescribeSourceServers",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "items"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "codeguru_reviewer_list_repository_associations",
+    "command": "aws codeguru-reviewer list-repository-associations",
+    "service": "codeguru-reviewer",
+    "operation": "ListRepositoryAssociations",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "RepositoryAssociationSummaries"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "backup_gateway_list_gateways",
+    "command": "aws backup-gateway list-gateways",
+    "service": "backup-gateway",
+    "operation": "ListGateways",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "Gateways"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "ssm_describe_instance_information",
+    "command": "aws ssm describe-instance-information",
+    "service": "ssm",
+    "operation": "DescribeInstanceInformation",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "InstanceInformationList"
+    ],
+    "body": "{}",
+    "headers": {}
+  },
+  {
+    "id": "ecr_batch_check_layer_availability",
+    "command": "aws ecr batch-check-layer-availability --repository-name demo --layer-digests sha256:abc",
+    "service": "ecr",
+    "operation": "BatchCheckLayerAvailability",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "layers"
+    ],
+    "body": "{\"repositoryName\":\"demo\",\"layerDigests\":[\"sha256:abc\"]}",
+    "headers": {
+      "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.BatchCheckLayerAvailability"
+    }
+  },
+  {
+    "id": "ecr_get_download_url_for_layer",
+    "command": "aws ecr get-download-url-for-layer --repository-name demo --layer-digest sha256:abc",
+    "service": "ecr",
+    "operation": "GetDownloadUrlForLayer",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "downloadUrl",
+      "layerDigest"
+    ],
+    "body": "{\"repositoryName\":\"demo\",\"layerDigest\":\"sha256:abc\"}",
+    "headers": {
+      "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.GetDownloadUrlForLayer"
+    }
+  },
+  {
+    "id": "ecr_initiate_layer_upload",
+    "command": "aws ecr initiate-layer-upload --repository-name demo",
+    "service": "ecr",
+    "operation": "InitiateLayerUpload",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "uploadId",
+      "partSize"
+    ],
+    "body": "{\"repositoryName\":\"demo\"}",
+    "headers": {
+      "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.InitiateLayerUpload"
+    }
+  },
+  {
+    "id": "ecr_complete_layer_upload",
+    "command": "aws ecr complete-layer-upload --repository-name demo --upload-id test --layer-digests sha256:abc",
+    "service": "ecr",
+    "operation": "CompleteLayerUpload",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "uploadId",
+      "layerDigest",
+      "repositoryName"
+    ],
+    "body": "{\"repositoryName\":\"demo\",\"uploadId\":\"test\",\"layerDigests\":[\"sha256:abc\"],\"layerDigest\":\"sha256:abc\"}",
+    "headers": {
+      "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.CompleteLayerUpload"
+    }
+  },
+  {
+    "id": "iam_get_context_keys_for_principal_policy",
+    "command": "aws iam get-context-keys-for-principal-policy --policy-source-arn arn:aws:iam::123456789012:user/victim-admin",
+    "service": "iam",
+    "operation": "GetContextKeysForPrincipalPolicy",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "ContextKeyNames"
+    ],
+    "body": "Action=GetContextKeysForPrincipalPolicy&PolicySourceArn=arn:aws:iam::123456789012:user/victim-admin",
+    "headers": {}
+  },
+  {
+    "id": "iam_list_service_specific_credentials",
+    "command": "aws iam list-service-specific-credentials --user-name victim-admin",
+    "service": "iam",
+    "operation": "ListServiceSpecificCredentials",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "ServiceSpecificCredentials"
+    ],
+    "body": "Action=ListServiceSpecificCredentials&UserName=victim-admin",
+    "headers": {}
+  },
+  {
+    "id": "iam_generate_service_last_accessed_details",
+    "command": "aws iam generate-service-last-accessed-details --arn arn:aws:iam::123456789012:user/victim-admin",
+    "service": "iam",
+    "operation": "GenerateServiceLastAccessedDetails",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "JobId"
+    ],
+    "body": "Action=GenerateServiceLastAccessedDetails&Arn=arn:aws:iam::123456789012:user/victim-admin",
+    "headers": {}
+  },
+  {
+    "id": "secretsmanager_validate_resource_policy",
+    "command": "aws secretsmanager validate-resource-policy --secret-id prod/db/password --resource-policy '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":\"*\"}]}'",
+    "service": "secretsmanager",
+    "operation": "ValidateResourcePolicy",
+    "protocol_family": "json",
+    "required_core_fields": [
+      "PolicyValidationPassed"
+    ],
+    "body": "{\"SecretId\":\"prod/db/password\",\"ResourcePolicy\":\"{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":\\\"*\\\",\\\"Action\\\":\\\"secretsmanager:GetSecretValue\\\",\\\"Resource\\\":\\\"*\\\"}]}\"}",
+    "headers": {}
+  },
+  {
+    "id": "sts_decode_authorization_message",
+    "command": "aws sts decode-authorization-message --encoded-message ZmFrZS1hdXRob3JpemF0aW9uLW1lc3NhZ2U=",
+    "service": "sts",
+    "operation": "DecodeAuthorizationMessage",
+    "protocol_family": "xml",
+    "required_core_fields": [
+      "DecodedMessage"
+    ],
+    "body": "Action=DecodeAuthorizationMessage&EncodedMessage=ZmFrZS1hdXRob3JpemF0aW9uLW1lc3NhZ2U=",
+    "headers": {}
+  }
 ]

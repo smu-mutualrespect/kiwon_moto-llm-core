@@ -19,6 +19,10 @@ if str(ROOT) not in sys.path:
 
 from moto.core.llm_agents.agent import handle_aws_request
 from moto.core.llm_agents.tools.request_tools import normalize_request_tool
+from moto.core.llm_agents.tools.state_tools import (
+    extract_session_id_tool,
+    get_world_state_tool,
+)
 from moto.core.llm_agents.tools.validation_tools import (
     build_comparison_points_tool,
     validate_rendered_response_tool,
@@ -39,6 +43,8 @@ PLACEHOLDER_VALUES = {
     "<instance-id>": "i-1234567890abcdef0",
     "<task-id>": "1234567890abcdef0123456789abcdef",
     "<container-name>": "app",
+    "<analyzer-arn>": "arn:aws:access-analyzer:us-east-1:123456789012:analyzer/my-analyzer",
+    "<stack-name>": "prod-infra-stack",
 }
 
 
@@ -206,7 +212,7 @@ def _run_entry(entry: dict[str, Any], *, latency_diagnosis: bool = False) -> dic
         headers,
         substituted.get("body", ""),
     )
-    world_state = {"consistency_locks": {"account_id": "123456789012"}, "region": "us-east-1"}
+    world_state = get_world_state_tool(extract_session_id_tool(headers), headers)
     validation_passed, validation_reason = validate_rendered_response_tool(canonical, response_body, world_state)
     comparison = build_comparison_points_tool(canonical, response_body, validation_passed, validation_reason)
     required_ok = _required_fields_present(response_body, substituted.get("protocol_family", "json"), substituted.get("required_core_fields", []))

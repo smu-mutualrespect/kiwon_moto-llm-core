@@ -141,7 +141,20 @@ def _sanitize_download_url(download_url: str, canonical: CanonicalRequest) -> st
 def _protected_output_members(canonical: CanonicalRequest) -> set[str]:
     members: set[str] = set()
     key = (canonical.service, canonical.operation)
-    if key == ("ecr", "InitiateLayerUpload"):
+    ecr_repository_members = {
+        "repository",
+        "repositories",
+        "repositoryArn",
+        "registryId",
+        "repositoryName",
+    }
+    if key == ("ecr", "DescribeRepositories"):
+        members.update(ecr_repository_members)
+    elif key == ("ecr", "CreateRepository"):
+        members.update(ecr_repository_members)
+    elif key == ("ecr", "DeleteRepository"):
+        members.update(ecr_repository_members)
+    elif key == ("ecr", "InitiateLayerUpload"):
         members.update({"uploadId", "partSize"})
     elif key == ("ecr", "GetDownloadUrlForLayer"):
         members.update({"downloadUrl", "layerDigest"})
@@ -151,6 +164,10 @@ def _protected_output_members(canonical: CanonicalRequest) -> set[str]:
         members.update({"layers"})
     elif key == ("ssm", "DescribeInstanceInformation"):
         members.update({"InstanceInformationList"})
+    elif key == ("ssm", "StartSession"):
+        members.update({"SessionId", "TokenValue", "StreamUrl"})
+    elif key == ("ecs", "ExecuteCommand"):
+        members.update({"session"})
     elif key == ("sts", "DecodeAuthorizationMessage"):
         members.update({"DecodedMessage"})
     elif key == ("secretsmanager", "ValidateResourcePolicy"):

@@ -11,7 +11,7 @@ from moto.core.utils import get_service_model
 
 from .tools.planning_tools import ResponsePlan
 from .tools.request_tools import CanonicalRequest
-from .tools.state_tools import _param_cache_key
+from .tools.state_tools import _param_cache_key, _resource_identity_keys
 
 _MAX_DEPTH = 6
 
@@ -126,8 +126,21 @@ def _generate_value(
     depth: int,
     protected_members: set[str],
 ) -> Any:
+    if shape.type_name == "string":
+        registered = _registered_value_for_shape_member(
+            canonical, world_state, member_name
+        )
+        if registered:
+            return _normalize_string_hint(
+                registered, canonical, world_state, member_name
+            )
+
     explicit = _lookup_explicit_hint(member_name, canonical, response_plan)
-    if explicit is not None and _explicit_hint_is_compatible(shape, explicit):
+    if (
+        explicit is not None
+        and not _protected_empty_hint(member_name, shape, explicit, protected_members)
+        and _explicit_hint_is_compatible(shape, explicit)
+    ):
         return _coerce_explicit_hint(
             shape, explicit, canonical, world_state, member_name
         )
@@ -269,6 +282,22 @@ def _explicit_hint_is_compatible(shape: Any, explicit: Any) -> bool:
     if type_name == "map":
         return isinstance(explicit, dict)
     return True
+
+
+def _protected_empty_hint(
+    member_name: str,
+    shape: Any,
+    explicit: Any,
+    protected_members: set[str],
+) -> bool:
+    if member_name not in protected_members:
+        return False
+    type_name = getattr(shape, "type_name", "")
+    if type_name == "structure":
+        return isinstance(explicit, dict) and not explicit
+    if type_name == "list":
+        return isinstance(explicit, list) and not explicit
+    return False
 
 
 def _coerce_explicit_hint(
@@ -532,6 +561,11 @@ def _generate_scalar_string(
         # *Name 조기 반환은 구체적 패턴 처리 후 마지막 fallback에서 수행
 
     if "arn" in combined:
+        registered = _lookup_registered_resource_value(
+            canonical, world_state, member_name, "arn"
+        )
+        if registered:
+            return _rewrite_arn_account(registered, account_id, region, canonical)
         target = canonical.target_identifiers.get(
             member_name
         ) or canonical.target_identifiers.get("Arn")
@@ -574,6 +608,8 @@ def _generate_scalar_string(
             if key in canonical.target_identifiers:
                 return canonical.target_identifiers[key].split("/")[-1]
         if "SecretId" in canonical.target_identifiers:
+            if canonical.service == "secretsmanager":
+                return canonical.target_identifiers["SecretId"]
             return canonical.target_identifiers["SecretId"].split("/")[-1]
         if canonical.service == "ssm":
             return f"ip-10-42-{_det_int(seed, 'name_a', 10)}-{_det_int(seed, 'name_b', 240) + 10}"
@@ -596,6 +632,13 @@ def _generate_scalar_string(
         direct = canonical.target_identifiers.get(member_name)
         if direct:
             return direct
+        registered = _lookup_registered_resource_value(
+            canonical, world_state, member_name, "id"
+        )
+        if registered:
+            return _normalize_string_hint(
+                registered, canonical, world_state, member_name
+            )
         if lowered == "registryid":
             return account_id
         # AvailabilityZoneId: AZ zone ID 형식 (e.g. use1-az1, usw2-az2)
@@ -651,6 +694,8 @@ def _generate_scalar_string(
         return "codecommit-" + _det_hex(seed, "credentialalias", 6)
     if lowered == "servicerole":
         return f"arn:aws:iam::{account_id}:role/AWSServiceRoleFor{canonical.service.capitalize()}"
+    if lowered == "tokenvalue":
+        return ""
     if "nexttoken" in combined or "marker" in combined or "token" in combined:
         return None
     if "url" in combined:
@@ -951,10 +996,64 @@ def _find_exposed_asset(
     return None
 
 
+def _lookup_registered_resource_value(
+    canonical: CanonicalRequest,
+    world_state: dict[str, Any],
+    member_name: str,
+    generic_key: str,
+) -> str | None:
+    registry = world_state.get("resource_registry", {})
+    if not isinstance(registry, dict):
+        return None
+    for key in _resource_identity_keys(canonical):
+        values = registry.get(key)
+        if not isinstance(values, dict):
+            continue
+        if values.get("__deleted__"):
+            continue
+        for candidate in (
+            member_name,
+            member_name[:1].lower() + member_name[1:],
+            generic_key,
+        ):
+            value = values.get(candidate)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
+def _registered_value_for_shape_member(
+    canonical: CanonicalRequest, world_state: dict[str, Any], member_name: str
+) -> str | None:
+    lowered = member_name.lower()
+    if lowered.endswith("arn") or lowered == "arn":
+        return _lookup_registered_resource_value(canonical, world_state, member_name, "arn")
+    if lowered.endswith("id"):
+        return _lookup_registered_resource_value(canonical, world_state, member_name, "id")
+    if lowered == "name" or lowered.endswith("name"):
+        return _lookup_registered_resource_value(
+            canonical, world_state, member_name, "name"
+        )
+    return None
+
+
 def _protected_members(canonical: CanonicalRequest, output_shape: Any) -> set[str]:
     protected = set(getattr(output_shape, "required_members", []) or [])
     operation_key = (canonical.service, canonical.operation)
-    if operation_key == ("ecr", "InitiateLayerUpload"):
+    ecr_repository_members = {
+        "repository",
+        "repositories",
+        "repositoryArn",
+        "registryId",
+        "repositoryName",
+    }
+    if operation_key == ("ecr", "DescribeRepositories"):
+        protected.update(ecr_repository_members)
+    elif operation_key == ("ecr", "CreateRepository"):
+        protected.update(ecr_repository_members)
+    elif operation_key == ("ecr", "DeleteRepository"):
+        protected.update(ecr_repository_members)
+    elif operation_key == ("ecr", "InitiateLayerUpload"):
         protected.update({"uploadId", "partSize"})
     elif operation_key == ("ecr", "GetDownloadUrlForLayer"):
         protected.update({"downloadUrl", "layerDigest"})
@@ -964,6 +1063,10 @@ def _protected_members(canonical: CanonicalRequest, output_shape: Any) -> set[st
         protected.update({"layers"})
     elif operation_key == ("ssm", "DescribeInstanceInformation"):
         protected.update({"InstanceInformationList"})
+    elif operation_key == ("ssm", "StartSession"):
+        protected.update({"SessionId", "TokenValue", "StreamUrl"})
+    elif operation_key == ("ecs", "ExecuteCommand"):
+        protected.update({"session"})
     elif operation_key == ("sts", "DecodeAuthorizationMessage"):
         protected.update({"DecodedMessage"})
     elif operation_key == ("secretsmanager", "ValidateResourcePolicy"):

@@ -1,0 +1,67 @@
+[
+  {
+    "id": "ecr_describe_repository_before_create",
+    "phase": "read_before_create",
+    "command": "aws ecr describe-repositories --repository-names cycle-demo",
+    "service": "ecr",
+    "operation": "DescribeRepositories",
+    "protocol_family": "json",
+    "required_core_fields": ["repositories"],
+    "body": "{\"repositoryNames\":[\"cycle-demo\"]}",
+    "headers": {
+      "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.DescribeRepositories"
+    }
+  },
+  {
+    "id": "ecr_create_repository",
+    "phase": "create",
+    "command": "aws ecr create-repository --repository-name cycle-demo",
+    "service": "ecr",
+    "operation": "CreateRepository",
+    "protocol_family": "json",
+    "required_core_fields": ["repository"],
+    "body": "{\"repositoryName\":\"cycle-demo\"}",
+    "headers": {
+      "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.CreateRepository"
+    }
+  },
+  {
+    "id": "ecr_describe_repository_after_create",
+    "phase": "read_after_create",
+    "command": "aws ecr describe-repositories --repository-names cycle-demo",
+    "service": "ecr",
+    "operation": "DescribeRepositories",
+    "protocol_family": "json",
+    "required_core_fields": ["repositories"],
+    "body": "{\"repositoryNames\":[\"cycle-demo\"]}",
+    "headers": {
+      "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.DescribeRepositories"
+    }
+  },
+  {
+    "id": "ecr_delete_repository",
+    "phase": "delete",
+    "command": "aws ecr delete-repository --repository-name cycle-demo --force",
+    "service": "ecr",
+    "operation": "DeleteRepository",
+    "protocol_family": "json",
+    "required_core_fields": ["repository"],
+    "body": "{\"repositoryName\":\"cycle-demo\",\"force\":true}",
+    "headers": {
+      "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.DeleteRepository"
+    }
+  },
+  {
+    "id": "ecr_describe_repository_after_delete",
+    "phase": "read_after_delete",
+    "command": "aws ecr describe-repositories --repository-names cycle-demo",
+    "service": "ecr",
+    "operation": "DescribeRepositories",
+    "protocol_family": "json",
+    "required_core_fields": ["repositories"],
+    "body": "{\"repositoryNames\":[\"cycle-demo\"]}",
+    "headers": {
+      "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.DescribeRepositories"
+    }
+  }
+]

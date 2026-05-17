@@ -36,7 +36,7 @@ else
 fi
 
 # 백그라운드로 실행 (터미널 닫아도 유지)
-nohup moto_server -p "$PORT" > "$LOG_FILE" 2>&1 &
+nohup python3 -m moto.server -p "$PORT" > "$LOG_FILE" 2>&1 &
 PID=$!
 echo "$PID" > "$PID_FILE"
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from moto.core.llm_agents.agent import handle_aws_request
 from moto.core.llm_agents.runtime import (
@@ -376,7 +377,10 @@ def test_shape_adapter_and_serializer_for_ecr_json() -> None:
     body, render_meta = serialize_response_tool(canonical, payload)
     parsed = json.loads(body)
 
-    assert parsed["uploadId"].startswith("upload-")
+    assert re.match(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        parsed["uploadId"],
+    )
     assert parsed["partSize"] > 0
     assert render_meta["protocol"] == "json"
 
@@ -389,7 +393,11 @@ def test_shape_adapter_echoes_request_identifiers_when_available() -> None:
         headers={
             "X-Amz-Target": "AmazonEC2ContainerRegistry_V20150921.CompleteLayerUpload"
         },
-        body='{"repositoryName":"demo","uploadId":"test","layerDigest":"sha256:abc"}',
+        body=(
+            '{"repositoryName":"demo",'
+            '"uploadId":"12345678-1234-1234-1234-123456789abc",'
+            '"layerDigest":"sha256:abc"}'
+        ),
     )
     world_state = {
         "consistency_locks": {"account_id": "123456789012"},
@@ -399,7 +407,7 @@ def test_shape_adapter_echoes_request_identifiers_when_available() -> None:
     payload, _ = adapt_response_plan(canonical, plan, world_state)
 
     assert payload["repositoryName"] == "demo"
-    assert payload["uploadId"] == "test"
+    assert payload["uploadId"] == "12345678-1234-1234-1234-123456789abc"
     assert payload["layerDigest"] == "sha256:abc"
 
 
@@ -446,6 +454,363 @@ def test_shape_adapter_preserves_aws_like_instance_ids(monkeypatch) -> None:
 
     assert "i-1234567890abcdef0" in response_body
     assert "instanceid-12345abcde" not in response_body
+
+
+def test_create_delete_reuses_session_resource_identifiers(monkeypatch) -> None:
+    headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            "Credential=AKIARESOURCEFLOW/20260517/us-east-1/secretsmanager/aws4_request"
+        )
+    }
+
+    monkeypatch.setenv("MOTO_LLM_OFFLINE_STUB", "1")
+    created_body = handle_aws_request(
+        service="secretsmanager",
+        action="CreateSecret",
+        url="https://secretsmanager.us-east-1.amazonaws.com/",
+        headers=headers,
+        body='{"Name":"prod/db"}',
+        reason="unit test",
+        source="unit_test",
+    )
+    created = json.loads(created_body)
+
+    def fake_call(prompt: str) -> tuple[str, dict[str, object]]:
+        return (
+            json.dumps(
+                {
+                    "intent_phase": "impact_probe",
+                    "response_posture": "normal",
+                    "error_mode": "none",
+                    "decoy_bundle_id": "delete_pass",
+                    "risk_delta": 0.1,
+                    "reason_tags": ["write_action"],
+                    "response_plan": {
+                        "mode": "success",
+                        "posture": "normal",
+                        "field_hints": {
+                            "ARN": (
+                                "arn:aws:secretsmanager:us-east-1:"
+                                "999999999999:secret:wrong"
+                            )
+                        },
+                    },
+                }
+            ),
+            {"provider": "openai", "duration_ms": 1.0},
+        )
+
+    monkeypatch.delenv("MOTO_LLM_OFFLINE_STUB", raising=False)
+    monkeypatch.setattr(
+        "moto.core.llm_agents.runtime.runner.call_gpt_api_with_meta", fake_call
+    )
+
+    deleted_body = handle_aws_request(
+        service="secretsmanager",
+        action="DeleteSecret",
+        url="https://secretsmanager.us-east-1.amazonaws.com/",
+        headers=headers,
+        body='{"SecretId":"prod/db"}',
+        reason="unit test",
+        source="unit_test",
+    )
+    deleted = json.loads(deleted_body)
+
+    assert deleted["ARN"] == created["ARN"]
+    assert deleted["Name"] == created["Name"]
+
+
+def test_read_create_read_delete_read_cycles_keep_resource_identity(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("MOTO_LLM_OFFLINE_STUB", "1")
+
+    secret_headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            "Credential=AKIASECRETCYCLE/20260517/us-east-1/secretsmanager/aws4_request"
+        )
+    }
+    handle_aws_request(
+        service="secretsmanager",
+        action="DescribeSecret",
+        url="https://secretsmanager.us-east-1.amazonaws.com/",
+        headers=secret_headers,
+        body='{"SecretId":"prod/db/cycle"}',
+        reason="unit test",
+        source="unit_test",
+    )
+    secret_created = json.loads(
+        handle_aws_request(
+            service="secretsmanager",
+            action="CreateSecret",
+            url="https://secretsmanager.us-east-1.amazonaws.com/",
+            headers=secret_headers,
+            body='{"Name":"prod/db/cycle"}',
+            reason="unit test",
+            source="unit_test",
+        )
+    )
+    secret_mid = json.loads(
+        handle_aws_request(
+            service="secretsmanager",
+            action="DescribeSecret",
+            url="https://secretsmanager.us-east-1.amazonaws.com/",
+            headers=secret_headers,
+            body='{"SecretId":"prod/db/cycle"}',
+            reason="unit test",
+            source="unit_test",
+        )
+    )
+    secret_deleted = json.loads(
+        handle_aws_request(
+            service="secretsmanager",
+            action="DeleteSecret",
+            url="https://secretsmanager.us-east-1.amazonaws.com/",
+            headers=secret_headers,
+            body='{"SecretId":"prod/db/cycle"}',
+            reason="unit test",
+            source="unit_test",
+        )
+    )
+    secret_post = json.loads(
+        handle_aws_request(
+            service="secretsmanager",
+            action="DescribeSecret",
+            url="https://secretsmanager.us-east-1.amazonaws.com/",
+            headers=secret_headers,
+            body='{"SecretId":"prod/db/cycle"}',
+            reason="unit test",
+            source="unit_test",
+        )
+    )
+
+    # create/mid/delete 세 단계는 같은 ARN을 공유해야 함
+    assert secret_created["ARN"] == secret_mid["ARN"] == secret_deleted["ARN"]
+    assert (
+        secret_created["Name"]
+        == secret_mid["Name"]
+        == secret_deleted["Name"]
+        == "prod/db/cycle"
+    )
+    # 삭제 후 describe는 에러 응답이어야 함 (ARN 없음)
+    assert "ARN" not in secret_post, (
+        f"describe after delete should not contain ARN, got: {secret_post}"
+    )
+
+    ecr_headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            "Credential=AKIAECRCYCLE/20260517/us-east-1/ecr/aws4_request"
+        )
+    }
+    ecr_url = "https://api.ecr.us-east-1.amazonaws.com/"
+    handle_aws_request(
+        service="ecr",
+        action="DescribeRepositories",
+        url=ecr_url,
+        headers=ecr_headers,
+        body='{"repositoryNames":["cycle-demo"]}',
+        reason="unit test",
+        source="unit_test",
+    )
+    ecr_created = json.loads(
+        handle_aws_request(
+            service="ecr",
+            action="CreateRepository",
+            url=ecr_url,
+            headers=ecr_headers,
+            body='{"repositoryName":"cycle-demo"}',
+            reason="unit test",
+            source="unit_test",
+        )
+    )["repository"]
+    ecr_mid = json.loads(
+        handle_aws_request(
+            service="ecr",
+            action="DescribeRepositories",
+            url=ecr_url,
+            headers=ecr_headers,
+            body='{"repositoryNames":["cycle-demo"]}',
+            reason="unit test",
+            source="unit_test",
+        )
+    )["repositories"][0]
+    ecr_deleted = json.loads(
+        handle_aws_request(
+            service="ecr",
+            action="DeleteRepository",
+            url=ecr_url,
+            headers=ecr_headers,
+            body='{"repositoryName":"cycle-demo","force":true}',
+            reason="unit test",
+            source="unit_test",
+        )
+    )["repository"]
+    ecr_post_raw = json.loads(
+        handle_aws_request(
+            service="ecr",
+            action="DescribeRepositories",
+            url=ecr_url,
+            headers=ecr_headers,
+            body='{"repositoryNames":["cycle-demo"]}',
+            reason="unit test",
+            source="unit_test",
+        )
+    )
+
+    # create/mid/delete 세 단계는 같은 ARN/name을 공유해야 함
+    assert (
+        ecr_created["repositoryArn"]
+        == ecr_mid["repositoryArn"]
+        == ecr_deleted["repositoryArn"]
+    )
+    assert (
+        ecr_created["repositoryName"]
+        == ecr_mid["repositoryName"]
+        == ecr_deleted["repositoryName"]
+        == "cycle-demo"
+    )
+    # 삭제 후 describe는 에러이거나 빈 repositories 목록이어야 함
+    assert "__type" in ecr_post_raw or ecr_post_raw.get("repositories") == [], (
+        f"describe after delete should be error or empty, got: {ecr_post_raw}"
+    )
+
+
+def test_live_not_found_is_stabilized_for_registered_resource(monkeypatch) -> None:
+    headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            "Credential=AKIAECRLIVEFIX/20260517/us-east-1/ecr/aws4_request"
+        )
+    }
+    url = "https://api.ecr.us-east-1.amazonaws.com/"
+
+    monkeypatch.setenv("MOTO_LLM_OFFLINE_STUB", "1")
+    created = json.loads(
+        handle_aws_request(
+            service="ecr",
+            action="CreateRepository",
+            url=url,
+            headers=headers,
+            body='{"repositoryName":"cycle-demo"}',
+            reason="unit test",
+            source="unit_test",
+        )
+    )["repository"]
+
+    def fake_call(prompt: str) -> tuple[str, dict[str, object]]:
+        return (
+            json.dumps(
+                {
+                    "intent_phase": "impact_probe",
+                    "response_posture": "sparse",
+                    "error_mode": "not_found",
+                    "decoy_bundle_id": "delete_not_found",
+                    "risk_delta": 0.1,
+                    "reason_tags": ["write_action"],
+                    "response_plan": {
+                        "mode": "error",
+                        "posture": "sparse",
+                        "field_hints": {"repository": {}},
+                    },
+                }
+            ),
+            {"provider": "openai", "duration_ms": 1.0},
+        )
+
+    monkeypatch.delenv("MOTO_LLM_OFFLINE_STUB", raising=False)
+    monkeypatch.setattr(
+        "moto.core.llm_agents.runtime.runner.call_gpt_api_with_meta", fake_call
+    )
+
+    deleted = json.loads(
+        handle_aws_request(
+            service="ecr",
+            action="DeleteRepository",
+            url=url,
+            headers=headers,
+            body='{"repositoryName":"cycle-demo","force":true}',
+            reason="unit test",
+            source="unit_test",
+        )
+    )["repository"]
+
+    assert deleted["repositoryArn"] == created["repositoryArn"]
+    assert deleted["repositoryName"] == "cycle-demo"
+
+
+def test_corpus_write_sequences_keep_request_and_generated_ids(monkeypatch) -> None:
+    monkeypatch.setenv("MOTO_LLM_OFFLINE_STUB", "1")
+
+    ec2_headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            "Credential=AKIAEC2WRITESEQ/20260517/us-east-1/ec2/aws4_request"
+        )
+    }
+    monitored = handle_aws_request(
+        service="ec2",
+        action="MonitorInstances",
+        url="https://ec2.us-east-1.amazonaws.com/",
+        headers=ec2_headers,
+        body="Action=MonitorInstances&InstanceId.1=i-1234567890abcdef0",
+        reason="unit test",
+        source="unit_test",
+    )
+    unmonitored = handle_aws_request(
+        service="ec2",
+        action="UnmonitorInstances",
+        url="https://ec2.us-east-1.amazonaws.com/",
+        headers=ec2_headers,
+        body="Action=UnmonitorInstances&InstanceId.1=i-1234567890abcdef0",
+        reason="unit test",
+        source="unit_test",
+    )
+
+    assert "i-1234567890abcdef0" in monitored
+    assert "i-1234567890abcdef0" in unmonitored
+
+    ecr_headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            "Credential=AKIAECRWRITESEQ/20260517/us-east-1/ecr/aws4_request"
+        )
+    }
+    ecr_url = "https://api.ecr.us-east-1.amazonaws.com/"
+    upload = json.loads(
+        handle_aws_request(
+            service="ecr",
+            action="InitiateLayerUpload",
+            url=ecr_url,
+            headers=ecr_headers,
+            body='{"repositoryName":"demo"}',
+            reason="unit test",
+            source="unit_test",
+        )
+    )
+    completed = json.loads(
+        handle_aws_request(
+            service="ecr",
+            action="CompleteLayerUpload",
+            url=ecr_url,
+            headers=ecr_headers,
+            body=json.dumps(
+                {
+                    "repositoryName": "demo",
+                    "uploadId": upload["uploadId"],
+                    "layerDigests": ["sha256:abc"],
+                }
+            ),
+            reason="unit test",
+            source="unit_test",
+        )
+    )
+
+    assert completed["uploadId"] == upload["uploadId"]
+    assert completed["repositoryName"] == "demo"
+    assert completed["layerDigest"] == "sha256:abc"
 
 
 def test_call_gpt_api_uses_direct_openai_by_default(monkeypatch) -> None:
