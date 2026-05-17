@@ -29,6 +29,8 @@ _HONEYPOT_CORE_MEMBERS: dict[tuple[str, str], list[str]] = {
     ("ecr", "DescribeRepositories"): ["repositories"],
     ("ecr", "CreateRepository"): ["repository"],
     ("ecr", "DeleteRepository"): ["repository"],
+    ("ec2", "MonitorInstances"): ["InstanceMonitorings"],
+    ("ec2", "UnmonitorInstances"): ["InstanceMonitorings"],
     ("ssm", "DescribeInstanceInformation"): ["InstanceInformationList"],
     ("ssm", "StartSession"): ["SessionId", "TokenValue", "StreamUrl"],
     ("ecs", "ExecuteCommand"): ["session"],

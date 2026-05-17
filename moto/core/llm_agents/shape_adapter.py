@@ -115,6 +115,12 @@ def _generate_structure(
     return result
 
 
+_PAGINATION_MEMBER_NAMES = frozenset({
+    "nexttoken", "marker", "nextmarker", "nextpage", "paginationtoken",
+    "continuationtoken", "resumetoken",
+})
+
+
 def _generate_value(
     member_name: str,
     shape: Any,
@@ -126,6 +132,11 @@ def _generate_value(
     depth: int,
     protected_members: set[str],
 ) -> Any:
+    # 페이지네이션 토큰은 항상 None — LLM field_hints가 있어도 무시한다.
+    # CLI가 non-null NextToken을 보면 다음 페이지 요청을 보내 무한 루프에 빠진다.
+    if member_name.lower() in _PAGINATION_MEMBER_NAMES:
+        return None
+
     if shape.type_name == "string":
         registered = _registered_value_for_shape_member(
             canonical, world_state, member_name
@@ -214,6 +225,12 @@ def _generate_list(
 
     if member_name in protected_members and response_plan.mode == "empty":
         count = 1
+    elif (
+        (canonical.service, canonical.operation)
+        in {("ec2", "MonitorInstances"), ("ec2", "UnmonitorInstances")}
+        and member_name == "InstanceMonitorings"
+    ):
+        count = _request_value_count(canonical, "InstanceId")
     else:
         count = _list_count(member_name, response_plan)
     if count <= 0:
@@ -863,6 +880,21 @@ def _list_count(member_name: str, response_plan: ResponsePlan) -> int:
     return max(1, min(3, int(response_plan.entity_hints.get("count", 2))))
 
 
+def _request_value_count(canonical: CanonicalRequest, member_name: str) -> int:
+    direct = canonical.request_params.get(member_name)
+    if isinstance(direct, list):
+        return max(1, min(3, len(direct)))
+    indexed_prefix = f"{member_name}."
+    indexed = [
+        key
+        for key in canonical.request_params
+        if isinstance(key, str) and key.startswith(indexed_prefix)
+    ]
+    if indexed:
+        return max(1, min(3, len(indexed)))
+    return 1
+
+
 def _pick_enum_value(enum: list[str]) -> str | None:
     preferred = ["Online", "Active", "AVAILABLE", "running", "Linux", "Allow"]
     for candidate in preferred:
@@ -1053,6 +1085,11 @@ def _protected_members(canonical: CanonicalRequest, output_shape: Any) -> set[st
         protected.update(ecr_repository_members)
     elif operation_key == ("ecr", "DeleteRepository"):
         protected.update(ecr_repository_members)
+    elif operation_key in {
+        ("ec2", "MonitorInstances"),
+        ("ec2", "UnmonitorInstances"),
+    }:
+        protected.update({"InstanceMonitorings", "InstanceId", "Monitoring", "State"})
     elif operation_key == ("ecr", "InitiateLayerUpload"):
         protected.update({"uploadId", "partSize"})
     elif operation_key == ("ecr", "GetDownloadUrlForLayer"):

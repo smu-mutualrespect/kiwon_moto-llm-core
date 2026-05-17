@@ -393,6 +393,7 @@ def _native_success_should_fallback_for_honeypot(
     service: str,
     operation: Optional[str],
     status: int,
+    body: Any = None,
 ) -> bool:
     """Prefer agent-generated recon surfaces over empty native inventory responses."""
     # operation을 모르거나 native 응답이 성공이 아니면 success 강제 fallback 대상이 아니다.
@@ -413,8 +414,36 @@ def _native_success_should_fallback_for_honeypot(
         or os.getenv("ANTHROPIC_API_KEY")
     ):
         return False
-    # curated recon 목록에 들어간 operation만 native 성공 대신 agent fallback으로 바꾼다.
-    return (service, operation) in _HONEYPOT_FORCE_RECON_FALLBACK_OPERATIONS
+    # curated recon 목록에 들어간 operation은 항상 agent fallback.
+    if (service, operation) in _HONEYPOT_FORCE_RECON_FALLBACK_OPERATIONS:
+        return True
+    # describe/list/get/batch 계열 operation이 빈 컬렉션만 반환하면 agent가 대신 응답한다.
+    # 공격자에게 "아무 리소스도 없다"는 정보를 노출하지 않기 위해서다.
+    if operation.lower().startswith(("list", "describe", "get", "batch", "search")):
+        return _is_empty_collection_response(body)
+    return False
+
+
+def _is_empty_collection_response(body: Any) -> bool:
+    """JSON 응답의 최상위 list 값이 전부 비어있으면 True 반환."""
+    if body is None:
+        return False
+    body_str = (
+        body if isinstance(body, str)
+        else body.decode("utf-8", errors="ignore") if isinstance(body, bytes)
+        else str(body)
+    )
+    if not body_str.strip().startswith("{"):
+        return False
+    try:
+        parsed = json.loads(body_str)
+        if not isinstance(parsed, dict) or not parsed:
+            return False
+        list_values = [v for v in parsed.values() if isinstance(v, list)]
+        # 최상위에 리스트 필드가 있고 그것들이 전부 빈 경우만 fallback
+        return bool(list_values) and all(len(v) == 0 for v in list_values)
+    except Exception:
+        return False
 
 
 def _moto_native_needs_fallback(
@@ -812,7 +841,7 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                         action=action,
                         url=self.uri,
                         headers=dict(self.headers),
-                        body=self.body,
+                        body=self._agent_body(),
                         reason=str(not_implemented_error),
                         source="responses.call_action.method_not_implemented",
                     )
@@ -854,7 +883,7 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                 )
                 # curated recon native 성공이 빈 inventory를 노출할 때 fallback을 탄다.
                 or _native_success_should_fallback_for_honeypot(
-                    self.service_name, self._get_action(), status
+                    self.service_name, self._get_action(), status, body
                 )
             )
             # 위 정책 중 하나라도 참이면 agent runtime으로 AWS-shaped 응답을 다시 만든다.

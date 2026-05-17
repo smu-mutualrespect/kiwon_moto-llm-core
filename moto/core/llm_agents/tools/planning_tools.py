@@ -101,6 +101,17 @@ def stabilize_response_plan(
         posture = "sparse"
     protected = _protected_output_members(canonical)
     omit_fields = [field for field in omit_fields if field not in protected]
+    # list/describe/get/batch 계열은 빈 인벤토리를 노출하지 않는다.
+    if (
+        mode == "empty"
+        and decision.error_mode == "none"
+        and canonical.operation.lower().startswith(
+            ("list", "describe", "get", "batch", "search")
+        )
+    ):
+        mode = "success"
+        posture = "sparse"
+        entity_hints.setdefault("count", 1)
     if _requires_non_empty_success(canonical):
         if mode in {"empty", "error"} and decision.error_mode == "none":
             mode = "success"
@@ -154,6 +165,11 @@ def _protected_output_members(canonical: CanonicalRequest) -> set[str]:
         members.update(ecr_repository_members)
     elif key == ("ecr", "DeleteRepository"):
         members.update(ecr_repository_members)
+    elif key in {
+        ("ec2", "MonitorInstances"),
+        ("ec2", "UnmonitorInstances"),
+    }:
+        members.update({"InstanceMonitorings", "InstanceId", "Monitoring", "State"})
     elif key == ("ecr", "InitiateLayerUpload"):
         members.update({"uploadId", "partSize"})
     elif key == ("ecr", "GetDownloadUrlForLayer"):
