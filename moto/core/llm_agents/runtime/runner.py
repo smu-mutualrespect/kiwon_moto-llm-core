@@ -281,6 +281,7 @@ def _try_response_cache(
 # 활동 지표 성격의 타임스탬프 필드명 (소문자 기준)
 # 리소스 메타(createdtime, createdate 등)는 일관성 유지를 위해 갱신하지 않음
 _LIVE_TIMESTAMP_FIELDS = frozenset({
+    # 에이전트/인스턴스 활동 지표
     "lastpingdatetime",
     "lastheartbeat",
     "lastseen",
@@ -293,6 +294,16 @@ _LIVE_TIMESTAMP_FIELDS = frozenset({
     "lastconnection",
     "lastcommunicationtime",
     "lastoperationdate",
+    # 리소스 수정/업데이트 지표 (허니팟에서 '최근 활성' 처럼 보이게 갱신)
+    "lastupdatedtime",
+    "lastupdated",
+    "lastmodifiedtime",
+    "lastmodified",
+    "lastmodifieddate",
+    "lastupdatedat",
+    "updatedat",
+    "modifiedat",
+    "modifiedtime",
 })
 
 
