@@ -92,6 +92,7 @@ def run_agent_loop(
         field_values, plan_meta = adapt_response_plan(
             canonical, response_plan, world_state
         )
+        field_values = _refresh_live_timestamps(field_values)
         response_body, rendered_meta = serialize_response_tool(canonical, field_values)
 
         if not response_body:
