@@ -167,7 +167,8 @@ def update_world_state_tool(
         resource_registry = dict(next_state.get("resource_registry", {}))
         _merge_resource_registry(resource_registry, canonical, field_values)
         next_state["resource_registry"] = resource_registry
-        if _is_delete_operation(canonical):
+        if not _should_cache_operation(canonical.operation):
+            # delete뿐 아니라 create/update/modify 등 모든 쓰기 연산 후 캐시 무효화
             _invalidate_read_cache(next_state, canonical)
 
     # Cache full field_values for read operations so repeated calls return identical results

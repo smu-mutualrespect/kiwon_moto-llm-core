@@ -197,23 +197,32 @@ def _log_fallback_stats(
     model = planner_meta.get("model", "-")
     error = planner_meta.get("error")
 
-    lines = [
-        "",
-        f"[moto-fallback] {canonical.service}:{canonical.operation}",
-        f"  provider : {provider} ({model})",
-    ]
-    if error:
-        lines.append(f"  error    : {error}")
-    else:
-        lines.append(
-            f"  tokens   : input={input_tokens}  output={output_tokens}  total={total_tokens}"
-        )
-    lines.extend(
-        [
+    is_cache_hit = provider == "response_cache"
+    if is_cache_hit:
+        lines = [
+            "",
+            f"[cache-hit]    {canonical.service}:{canonical.operation}",
             f"  time     : {round(total_ms)}ms",
             "",
         ]
-    )
+    else:
+        lines = [
+            "",
+            f"[moto-fallback] {canonical.service}:{canonical.operation}",
+            f"  provider : {provider} ({model})",
+        ]
+        if error:
+            lines.append(f"  error    : {error}")
+        else:
+            lines.append(
+                f"  tokens   : input={input_tokens}  output={output_tokens}  total={total_tokens}"
+            )
+        lines.extend(
+            [
+                f"  time     : {round(total_ms)}ms",
+                "",
+            ]
+        )
     print("\n".join(lines), file=sys.stderr, flush=True)  # noqa: T201
 
 

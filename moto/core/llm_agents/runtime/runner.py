@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import os
+from copy import deepcopy
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Optional
 
 from ..shape_adapter import adapt_response_plan
 from ..tools import build_response_plan_tool, validate_rendered_response_tool
 from ..tools.render_tools import serialize_response_tool
 from ..tools.request_tools import CanonicalRequest
-from ..tools.state_tools import _resource_identity_keys
+from ..tools.state_tools import _param_cache_key, _resource_identity_keys, _should_cache_operation
 from .planner import DEFAULT_OUTPUT, AgentOutput, build_agent_prompt, parse_agent_output
 from .provider import _load_dotenv_if_present, call_gpt_api_with_meta, select_provider
 from .tool_executor import execute_agent_tool_requests
@@ -32,6 +33,10 @@ def run_agent_loop(
     source: str,
     max_attempts: int = 2,
 ) -> AgentRunResult:
+    cached = _try_response_cache(canonical, world_state)
+    if cached is not None:
+        return cached
+
     latest_observation = ""
     available_tools = get_available_tool_names()
     last_planner_meta: dict[str, Any] = {}
@@ -226,3 +231,46 @@ def _resource_is_tombstoned(
         if isinstance(values, dict) and values.get("__deleted__"):
             return True
     return False
+
+
+def _try_response_cache(
+    canonical: CanonicalRequest,
+    world_state: dict[str, Any],
+) -> Optional[AgentRunResult]:
+    """LLM 호출 전 response_cache 확인 — 히트 시 직렬화만 하고 즉시 반환."""
+    if not _should_cache_operation(canonical.operation):
+        return None
+
+    # 페이지네이션 연속 요청은 캐시 우회 (다음 페이지 데이터가 다르므로)
+    seen_tokens = world_state.get("seen_pagination_tokens", [])
+    if any(isinstance(v, str) and v in seen_tokens for v in canonical.request_params.values()):
+        return None
+
+    cache_key = _param_cache_key(
+        canonical.service, canonical.operation, canonical.target_identifiers
+    )
+    cached_fields = world_state.get("response_cache", {}).get(cache_key)
+    if cached_fields is None:
+        return None
+
+    response_body, rendered_meta = serialize_response_tool(canonical, deepcopy(cached_fields))
+    if not response_body:
+        # 직렬화 실패 시 LLM으로 fallthrough
+        return None
+
+    return AgentRunResult(
+        agent_output=DEFAULT_OUTPUT,
+        response_body=response_body,
+        rendered_meta={
+            **rendered_meta,
+            "validation_passed": True,
+            "validation_reason": "response_cache_hit",
+            "attempts": 0,
+        },
+        field_values=cached_fields,
+        planner_meta={
+            "provider": "response_cache",
+            "model": "cache",
+            "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        },
+    )
