@@ -10,7 +10,11 @@ from ..shape_adapter import adapt_response_plan
 from ..tools import build_response_plan_tool, validate_rendered_response_tool
 from ..tools.render_tools import serialize_response_tool
 from ..tools.request_tools import CanonicalRequest
-from ..tools.state_tools import _param_cache_key, _resource_identity_keys, _should_cache_operation
+from ..tools.state_tools import (
+    _param_cache_key,
+    _resource_identity_keys,
+    _should_cache_operation,
+)
 from .planner import DEFAULT_OUTPUT, AgentOutput, build_agent_prompt, parse_agent_output
 from .provider import _load_dotenv_if_present, call_gpt_api_with_meta, select_provider
 from .tool_executor import execute_agent_tool_requests
@@ -216,7 +220,9 @@ def _has_registered_resource_identity(
             continue
         if values.get("__deleted__"):
             continue
-        if any(isinstance(v, str) and v for k, v in values.items() if k != "__deleted__"):
+        if any(
+            isinstance(v, str) and v for k, v in values.items() if k != "__deleted__"
+        ):
             return True
     return False
 
@@ -245,7 +251,10 @@ def _try_response_cache(
 
     # 페이지네이션 연속 요청은 캐시 우회 (다음 페이지 데이터가 다르므로)
     seen_tokens = world_state.get("seen_pagination_tokens", [])
-    if any(isinstance(v, str) and v in seen_tokens for v in canonical.request_params.values()):
+    if any(
+        isinstance(v, str) and v in seen_tokens
+        for v in canonical.request_params.values()
+    ):
         return None
 
     cache_key = _param_cache_key(
@@ -281,31 +290,33 @@ def _try_response_cache(
 
 # 활동 지표 성격의 타임스탬프 필드명 (소문자 기준)
 # 리소스 메타(createdtime, createdate 등)는 일관성 유지를 위해 갱신하지 않음
-_LIVE_TIMESTAMP_FIELDS = frozenset({
-    # 에이전트/인스턴스 활동 지표
-    "lastpingdatetime",
-    "lastheartbeat",
-    "lastseen",
-    "lastcontact",
-    "lastagentcheck",
-    "lastreporttime",
-    "laststatuscheck",
-    "laststatuschange",
-    "lasthealthcheck",
-    "lastconnection",
-    "lastcommunicationtime",
-    "lastoperationdate",
-    # 리소스 수정/업데이트 지표 (허니팟에서 '최근 활성' 처럼 보이게 갱신)
-    "lastupdatedtime",
-    "lastupdated",
-    "lastmodifiedtime",
-    "lastmodified",
-    "lastmodifieddate",
-    "lastupdatedat",
-    "updatedat",
-    "modifiedat",
-    "modifiedtime",
-})
+_LIVE_TIMESTAMP_FIELDS = frozenset(
+    {
+        # 에이전트/인스턴스 활동 지표
+        "lastpingdatetime",
+        "lastheartbeat",
+        "lastseen",
+        "lastcontact",
+        "lastagentcheck",
+        "lastreporttime",
+        "laststatuscheck",
+        "laststatuschange",
+        "lasthealthcheck",
+        "lastconnection",
+        "lastcommunicationtime",
+        "lastoperationdate",
+        # 리소스 수정/업데이트 지표 (허니팟에서 '최근 활성' 처럼 보이게 갱신)
+        "lastupdatedtime",
+        "lastupdated",
+        "lastmodifiedtime",
+        "lastmodified",
+        "lastmodifieddate",
+        "lastupdatedat",
+        "updatedat",
+        "modifiedat",
+        "modifiedtime",
+    }
+)
 
 
 def _refresh_live_timestamps(data: Any) -> Any:
@@ -321,7 +332,11 @@ def _refresh_live_timestamps(data: Any) -> Any:
 def _refresh_recursive(data: Any, now: str) -> Any:
     if isinstance(data, dict):
         return {
-            k: (now if k.lower() in _LIVE_TIMESTAMP_FIELDS and isinstance(v, str) else _refresh_recursive(v, now))
+            k: (
+                now
+                if k.lower() in _LIVE_TIMESTAMP_FIELDS and isinstance(v, str)
+                else _refresh_recursive(v, now)
+            )
             for k, v in data.items()
         }
     if isinstance(data, list):

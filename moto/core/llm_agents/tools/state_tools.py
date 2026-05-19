@@ -423,7 +423,9 @@ def _resource_identity_keys(canonical: CanonicalRequest) -> list[str]:
     return keys
 
 
-def _iter_resource_leaf_strings(obj: Any, parent_key: str = "") -> list[tuple[str, str]]:
+def _iter_resource_leaf_strings(
+    obj: Any, parent_key: str = ""
+) -> list[tuple[str, str]]:
     results: list[tuple[str, str]] = []
     if isinstance(obj, dict):
         for key, value in obj.items():

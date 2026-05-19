@@ -429,8 +429,10 @@ def _is_empty_collection_response(body: Any) -> bool:
     if body is None:
         return False
     body_str = (
-        body if isinstance(body, str)
-        else body.decode("utf-8", errors="ignore") if isinstance(body, bytes)
+        body
+        if isinstance(body, str)
+        else body.decode("utf-8", errors="ignore")
+        if isinstance(body, bytes)
         else str(body)
     )
     if not body_str.strip().startswith("{"):

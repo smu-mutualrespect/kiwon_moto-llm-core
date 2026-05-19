@@ -115,10 +115,17 @@ def _generate_structure(
     return result
 
 
-_PAGINATION_MEMBER_NAMES = frozenset({
-    "nexttoken", "marker", "nextmarker", "nextpage", "paginationtoken",
-    "continuationtoken", "resumetoken",
-})
+_PAGINATION_MEMBER_NAMES = frozenset(
+    {
+        "nexttoken",
+        "marker",
+        "nextmarker",
+        "nextpage",
+        "paginationtoken",
+        "continuationtoken",
+        "resumetoken",
+    }
+)
 
 
 def _generate_value(
@@ -225,11 +232,10 @@ def _generate_list(
 
     if member_name in protected_members and response_plan.mode == "empty":
         count = 1
-    elif (
-        (canonical.service, canonical.operation)
-        in {("ec2", "MonitorInstances"), ("ec2", "UnmonitorInstances")}
-        and member_name == "InstanceMonitorings"
-    ):
+    elif (canonical.service, canonical.operation) in {
+        ("ec2", "MonitorInstances"),
+        ("ec2", "UnmonitorInstances"),
+    } and member_name == "InstanceMonitorings":
         count = _request_value_count(canonical, "InstanceId")
     else:
         count = _list_count(member_name, response_plan)
@@ -362,9 +368,15 @@ def _coerce_explicit_hint(
             explicit = explicit[0] if explicit else ""
         elif isinstance(explicit, dict):
             explicit = json.dumps(explicit, separators=(",", ":"))
-        return _normalize_string_hint(
+        normalized = _normalize_string_hint(
             str(explicit), canonical, world_state, member_name
         )
+        # LLM hint가 shape enum과 불일치하면 preferred enum 값으로 교체
+        enum_vals = getattr(shape, "enum", None)
+        if enum_vals and normalized not in enum_vals:
+            preferred = _pick_enum_value(list(enum_vals))
+            return preferred if preferred else normalized
+        return normalized
     if type_name == "boolean":
         if isinstance(explicit, str):
             return explicit.strip().lower() in {"true", "1", "yes", "enabled", "active"}
@@ -510,8 +522,8 @@ def _rewrite_arn_account(
 
     arn_service = parts[2]  # arn:aws:<service>:region:account:resource
 
-    # IAM/STS ARN: region 없음, account 있음  arn:aws:iam::123456789012:...
-    if arn_service in {"iam", "sts"}:
+    # IAM/STS/Organizations ARN: region 없음, account 있음
+    if arn_service in {"iam", "sts", "organizations"}:
         parts[3] = ""
         parts[4] = account_id
     # Bedrock foundation-model ARN: region 있음, account 없음
@@ -607,8 +619,8 @@ def _generate_scalar_string(
             return (
                 f"arn:aws:bedrock:{region}::foundation-model/{_known_model_ids[_idx]}"
             )
-        # IAM ARN: region 없이 account만 있어야 함
-        if canonical.service in {"iam", "sts"}:
+        # IAM/Organizations ARN: region 없이 account만 있어야 함
+        if canonical.service in {"iam", "sts", "organizations"}:
             return f"arn:aws:{canonical.service}::{account_id}:{canonical.operation.lower()}/{_det_hex(seed, 'arn_suffix', 8)}"
         return f"arn:aws:{canonical.service}:{region}:{account_id}:{canonical.operation.lower()}/{_det_hex(seed, 'arn_suffix', 8)}"
     if lowered == "name":
@@ -630,6 +642,20 @@ def _generate_scalar_string(
             return canonical.target_identifiers["SecretId"].split("/")[-1]
         if canonical.service == "ssm":
             return f"ip-10-42-{_det_int(seed, 'name_a', 10)}-{_det_int(seed, 'name_b', 240) + 10}"
+        if canonical.service == "organizations":
+            _org_name_prefixes = [
+                "Production",
+                "Staging",
+                "Development",
+                "Security",
+                "Logging",
+                "Network",
+                "Shared",
+            ]
+            _nidx = int(_det_hex(seed, "org_name_prefix", 2), 16) % len(
+                _org_name_prefixes
+            )
+            return f"{_org_name_prefixes[_nidx]} Account"
         return f"{canonical.service}-{canonical.operation.lower()}"
     if "digest" in combined:
         return canonical.target_identifiers.get(
@@ -692,6 +718,13 @@ def _generate_scalar_string(
                 _bedrock_model_ids
             )
             return _bedrock_model_ids[_midx]
+        # Organizations account ID는 12자리 숫자
+        if canonical.service == "organizations" and lowered == "id":
+            _num = (
+                int(_det_hex(seed, "org_account_id", 10), 16) % 900000000000
+                + 100000000000
+            )
+            return str(_num)
         return f"{canonical.service}-{_det_hex(seed, 'generic_id', 8)}"
     if "repository" in combined and "name" in combined:
         return canonical.target_identifiers.get(member_name, "demo")
@@ -715,6 +748,12 @@ def _generate_scalar_string(
         return ""
     if "nexttoken" in combined or "marker" in combined or "token" in combined:
         return None
+    if "email" in combined:
+        _email_users = ["alice", "bob", "charlie", "dave", "admin", "ops", "user"]
+        _uidx = int(_det_hex(seed, "email_user", 2), 16) % len(_email_users)
+        _email_domains = ["example.com", "company.com", "corp.io", "internal.com"]
+        _didx = int(_det_hex(seed, "email_domain", 2), 16) % len(_email_domains)
+        return f"{_email_users[_uidx]}@{_email_domains[_didx]}"
     if "url" in combined:
         return f"mock://{canonical.service}/{canonical.operation.lower()}/{_det_hex(seed, 'url_suffix', 12)}"
     # status message에는 내부 synthetic JSON을 넣지 않고 사람이 볼 수 있는 성공 문구를 넣는다.
@@ -811,6 +850,9 @@ def _generate_scalar_string(
     if any(t in combined for t in ("owner", "creator", "author")):
         return "admin"
     if "path" in combined or "prefix" in combined:
+        if canonical.service == "organizations":
+            _org_id = f"o-{_det_hex(seed, 'org_id', 10)}"
+            return f"{_org_id}/r-root/"
         return "/"
     if lowered.endswith("type") and "instance" not in lowered:
         return "Standard"
@@ -896,7 +938,7 @@ def _request_value_count(canonical: CanonicalRequest, member_name: str) -> int:
 
 
 def _pick_enum_value(enum: list[str]) -> str | None:
-    preferred = ["Online", "Active", "AVAILABLE", "running", "Linux", "Allow"]
+    preferred = ["Online", "Active", "ACTIVE", "AVAILABLE", "running", "Linux", "Allow"]
     for candidate in preferred:
         if candidate in enum:
             return candidate
@@ -950,6 +992,16 @@ def _apply_string_index_variation(member_name: str, value: str, idx: int) -> str
         return value
     if lowered in {"username", "serviceusername", "computername"}:
         return f"{value}-{idx}"
+    # 12자리 숫자 (organizations account ID) — 인덱스별 고유 계정 ID
+    if lowered == "id" and re.match(r"^\d{12}$", value):
+        return str((int(value) + idx * 100000000) % 10**12).zfill(12)
+    # 이메일 주소 — 인덱스별 고유 주소
+    if "@" in value:
+        _em_parts = value.split("@", 1)
+        return f"{_em_parts[0]}{idx + 1}@{_em_parts[1]}"
+    # 이름 필드 — 인덱스 번호 추가
+    if lowered == "name":
+        return f"{value} {idx + 1}"
     return value
 
 
@@ -1059,9 +1111,13 @@ def _registered_value_for_shape_member(
 ) -> str | None:
     lowered = member_name.lower()
     if lowered.endswith("arn") or lowered == "arn":
-        return _lookup_registered_resource_value(canonical, world_state, member_name, "arn")
+        return _lookup_registered_resource_value(
+            canonical, world_state, member_name, "arn"
+        )
     if lowered.endswith("id"):
-        return _lookup_registered_resource_value(canonical, world_state, member_name, "id")
+        return _lookup_registered_resource_value(
+            canonical, world_state, member_name, "id"
+        )
     if lowered == "name" or lowered.endswith("name"):
         return _lookup_registered_resource_value(
             canonical, world_state, member_name, "name"
