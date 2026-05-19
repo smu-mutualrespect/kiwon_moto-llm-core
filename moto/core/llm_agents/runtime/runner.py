@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ..shape_adapter import adapt_response_plan
@@ -253,7 +254,8 @@ def _try_response_cache(
     if cached_fields is None:
         return None
 
-    response_body, rendered_meta = serialize_response_tool(canonical, deepcopy(cached_fields))
+    refreshed_fields = _refresh_live_timestamps(deepcopy(cached_fields))
+    response_body, rendered_meta = serialize_response_tool(canonical, refreshed_fields)
     if not response_body:
         # 직렬화 실패 시 LLM으로 fallthrough
         return None
@@ -267,10 +269,49 @@ def _try_response_cache(
             "validation_reason": "response_cache_hit",
             "attempts": 0,
         },
-        field_values=cached_fields,
+        field_values=refreshed_fields,
         planner_meta={
             "provider": "response_cache",
             "model": "cache",
             "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
         },
     )
+
+
+# 활동 지표 성격의 타임스탬프 필드명 (소문자 기준)
+# 리소스 메타(createdtime, createdate 등)는 일관성 유지를 위해 갱신하지 않음
+_LIVE_TIMESTAMP_FIELDS = frozenset({
+    "lastpingdatetime",
+    "lastheartbeat",
+    "lastseen",
+    "lastcontact",
+    "lastagentcheck",
+    "lastreporttime",
+    "laststatuscheck",
+    "laststatuschange",
+    "lasthealthcheck",
+    "lastconnection",
+    "lastcommunicationtime",
+    "lastoperationdate",
+})
+
+
+def _refresh_live_timestamps(data: Any) -> Any:
+    """캐시 히트 응답에서 활동 지표 타임스탬프를 현재 시각으로 갱신.
+
+    CreatedTime / CreateDate 등 불변 메타 필드는 건드리지 않아
+    동일 리소스를 반복 조회해도 생성 시각이 바뀌지 않는다.
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    return _refresh_recursive(data, now)
+
+
+def _refresh_recursive(data: Any, now: str) -> Any:
+    if isinstance(data, dict):
+        return {
+            k: (now if k.lower() in _LIVE_TIMESTAMP_FIELDS and isinstance(v, str) else _refresh_recursive(v, now))
+            for k, v in data.items()
+        }
+    if isinstance(data, list):
+        return [_refresh_recursive(item, now) for item in data]
+    return data

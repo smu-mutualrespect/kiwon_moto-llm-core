@@ -245,6 +245,10 @@ def record_native_interaction_tool(
             _record_pagination_tokens_from_xml(next_state, response_body)
         next_state["known_names"] = known_names
 
+        # moto native 쓰기 연산 성공 시 캐시 무효화 (agent 경로와 동일한 정책)
+        if status_code < 300 and not _should_cache_operation(canonical.operation):
+            _invalidate_read_cache(next_state, canonical)
+
         _session_state[session_id] = next_state
 
 
