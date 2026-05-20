@@ -31,10 +31,20 @@ def has_session_history(session_id: str) -> bool:
 def has_cached_agent_response_tool(
     session_id: str, service: str, operation: str
 ) -> bool:
-    """에이전트가 이 operation을 이전에 응답한 적 있는지 확인 (agent_responses 기반)."""
+    """에이전트가 이 operation을 이전에 응답한 적 있는지 확인 (agent_responses 기반).
+
+    같은 세션에서 agent가 해당 서비스의 write 연산을 처리한 적 있으면,
+    이후 동일 서비스의 read 연산도 agent로 라우팅해 일관성을 유지한다.
+    """
     with _lock:
         state = _session_state.get(session_id, {})
-    return f"{service}:{operation}" in state.get("agent_responses", [])
+    if f"{service}:{operation}" in state.get("agent_responses", []):
+        return True
+    # agent가 이 서비스의 write를 처리한 이력이 있고 현재 요청이 read면 agent로 라우팅
+    if service in state.get("agent_modified_services", []):
+        if _should_cache_operation(operation):
+            return True
+    return False
 
 
 def get_session_history_tool(session_id: str) -> str:
@@ -170,6 +180,11 @@ def update_world_state_tool(
         if not _should_cache_operation(canonical.operation):
             # delete뿐 아니라 create/update/modify 등 모든 쓰기 연산 후 캐시 무효화
             _invalidate_read_cache(next_state, canonical)
+            # 이 서비스의 write를 agent가 처리했음을 기록 — 이후 read도 agent로 라우팅
+            agent_modified = list(next_state.get("agent_modified_services", []))
+            if canonical.service not in agent_modified:
+                agent_modified.append(canonical.service)
+            next_state["agent_modified_services"] = agent_modified
 
     # Cache full field_values for read operations so repeated calls return identical results
     if field_values and _should_cache_operation(canonical.operation):
