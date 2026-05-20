@@ -82,7 +82,7 @@ def _build_compact_agent_prompt(
         f"params={json.dumps(canonical.request_params, default=str, separators=(',', ':'))} "
         f"ids={json.dumps(canonical.target_identifiers, default=str, separators=(',', ':'))} "
         f"acct={account_id} region={region} reason={reason} source={source} "
-        f"history={json.dumps(history_context[:800], ensure_ascii=False, separators=(',', ':'))} "
+        f"history={json.dumps(history_context[:400], ensure_ascii=False, separators=(',', ':'))} "
         f"tools={tool_block} LATEST_OBSERVATION={latest_observation_block}. "
         'OUTPUT_JSON_SCHEMA: {"intent_phase":"recon","response_posture":"sparse|normal","error_mode":"none|access_denied|throttling|not_found",'
         '"decoy_bundle_id":"baseline","risk_delta":0.1,"reason_tags":["enum_pattern"],'

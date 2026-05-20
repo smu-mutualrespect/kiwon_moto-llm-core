@@ -1,13 +1,36 @@
 from __future__ import annotations
 
-import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
-from urllib.request import Request, urlopen
+
+import requests
 
 _DOTENV_LOADED = False
+
+# 프로바이더별 Session 싱글턴 — TCP+TLS 연결을 재사용해 핸드셰이크 오버헤드를 제거
+_OPENAI_SESSION = requests.Session()
+_ANTHROPIC_SESSION = requests.Session()
+
+
+def _warmup_connections() -> None:
+    """서버 시작 시 백그라운드에서 API 연결을 미리 수립."""
+    _load_dotenv_if_present()
+    provider = select_provider()
+    try:
+        if provider == "anthropic" and os.getenv("ANTHROPIC_API_KEY"):
+            _ANTHROPIC_SESSION.get("https://api.anthropic.com", timeout=3)
+        elif provider == "openai" and os.getenv("OPENAI_API_KEY"):
+            _OPENAI_SESSION.get("https://api.openai.com", timeout=3)
+    except Exception:
+        pass
+
+
+def warmup_provider_connection() -> None:
+    """허니팟 서버 초기화 시 호출 — 백그라운드에서 연결 워밍업."""
+    threading.Thread(target=_warmup_connections, daemon=True).start()
 
 
 def call_gpt_api(
@@ -63,6 +86,7 @@ def _call_openai_api_with_meta(
         },
         payload=payload,
         timeout=timeout,
+        session=_OPENAI_SESSION,
     )
     parts: list[str] = []
     for item in response.get("output", []):
@@ -108,6 +132,7 @@ def _call_anthropic_api_with_meta(
         },
         payload=payload,
         timeout=timeout,
+        session=_ANTHROPIC_SESSION,
     )
     parts: list[str] = []
     for content in response.get("content", []):
@@ -137,17 +162,16 @@ def _normalize_anthropic_usage(usage: Any) -> dict[str, Any]:
 
 
 def _post_json(
-    *, url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float
+    *,
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    timeout: float,
+    session: requests.Session,
 ) -> dict[str, Any]:
-    request = Request(
-        url=url,
-        headers=headers,
-        data=json.dumps(payload).encode("utf-8"),
-        method="POST",
-    )
-    with urlopen(request, timeout=timeout) as response:
-        raw = response.read().decode("utf-8")
-    parsed = json.loads(raw)
+    response = session.post(url, headers=headers, json=payload, timeout=timeout)
+    response.raise_for_status()
+    parsed = response.json()
     if not isinstance(parsed, dict):
         raise ValueError("Expected JSON object response")
     return parsed

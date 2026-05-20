@@ -519,6 +519,11 @@ def create_llm_fallback_app() -> Flask:
     # native backend가 없는 서비스/operation 요청을 처리하는 전용 Flask app이다.
     fallback_app = Flask("moto_llm_fallback")
 
+    # LLM API 연결을 백그라운드에서 미리 수립해 첫 요청의 핸드셰이크 오버헤드를 줄인다.
+    from moto.core.llm_agents.runtime.provider import warmup_provider_connection
+
+    warmup_provider_connection()
+
     # 루트 path 요청도 fallback agent로 들어오게 한다.
     @fallback_app.route("/", defaults={"path": ""}, methods=HTTP_METHODS)
     # 임의 path 요청도 fallback agent로 들어오게 한다.
