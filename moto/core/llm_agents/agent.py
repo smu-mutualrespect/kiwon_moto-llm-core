@@ -81,6 +81,7 @@ def handle_aws_request(
     body: Any,
     reason: str = "Unknown",
     source: str = "Unknown",
+    moto_native_body: Optional[str] = None,
 ) -> str:
     started_perf = time.perf_counter()
     started_at = _utc_iso()
@@ -97,6 +98,7 @@ def handle_aws_request(
         reason=reason,
         source=source,
         max_attempts=_max_attempts(),
+        moto_native_body=moto_native_body,
     )
     agent_output = run_result.agent_output
     planner_meta = run_result.planner_meta

@@ -37,14 +37,57 @@ def run_agent_loop(
     reason: str,
     source: str,
     max_attempts: int = 2,
+    moto_native_body: Optional[str] = None,
 ) -> AgentRunResult:
     cached = _try_response_cache(canonical, world_state)
     if cached is not None:
         return cached
 
+    native_dict: Optional[dict[str, Any]] = None
+
+    # moto native body가 있으면 botocore로 파싱 후 resource_state_patches 적용 —
+    # agent 호출 없이 즉시 반환해 latency와 hallucination을 방지한다.
+    if moto_native_body:
+        native_dict = _parse_native_to_dict(canonical, moto_native_body)
+        if native_dict is not None:
+            patches = world_state.get("resource_state_patches", {}).get(
+                canonical.service, {}
+            )
+            final_dict = (
+                _apply_resource_patches(deepcopy(native_dict), patches)
+                if patches
+                else native_dict
+            )
+            response_body, rendered_meta = serialize_response_tool(
+                canonical, final_dict
+            )
+            if response_body:
+                return AgentRunResult(
+                    agent_output=DEFAULT_OUTPUT,
+                    response_body=response_body,
+                    rendered_meta={
+                        **rendered_meta,
+                        "validation_passed": True,
+                        "validation_reason": "moto_native_with_patches",
+                        "attempts": 0,
+                    },
+                    field_values=final_dict,
+                    planner_meta={
+                        "provider": "moto_native_patches",
+                        "model": "deterministic",
+                        "usage": {
+                            "input_tokens": 0,
+                            "output_tokens": 0,
+                            "total_tokens": 0,
+                        },
+                    },
+                )
+
     latest_observation = ""
+
     available_tools = get_available_tool_names()
     last_planner_meta: dict[str, Any] = {}
+    last_field_values: dict[str, Any] = {}
     tool_observations: list[str] = []
 
     for attempt in range(1, max_attempts + 1):
@@ -90,6 +133,52 @@ def run_agent_loop(
                 planner_meta=last_planner_meta,
             )
 
+        # field_patches: agent가 변경분만 출력 → native baseline에 적용
+        if agent_output.field_patches is not None and native_dict is not None:
+            patched = _apply_resource_patches(
+                deepcopy(native_dict), agent_output.field_patches
+            )
+            response_body, rendered_meta = serialize_response_tool(canonical, patched)
+            if response_body:
+                return AgentRunResult(
+                    agent_output=agent_output,
+                    response_body=response_body,
+                    rendered_meta={
+                        **rendered_meta,
+                        "validation_passed": True,
+                        "validation_reason": "field_patches_applied",
+                        "attempts": attempt,
+                    },
+                    field_values=patched,
+                    planner_meta=last_planner_meta,
+                )
+            latest_observation = (
+                "field_patches application failed; fall back to response_plan"
+            )
+
+        # patched_field_values: agent가 전체 dict를 출력 (소형 응답에 대한 호환 경로)
+        if agent_output.patched_field_values is not None:
+            field_values = agent_output.patched_field_values
+            response_body, rendered_meta = serialize_response_tool(
+                canonical, field_values
+            )
+            if response_body:
+                return AgentRunResult(
+                    agent_output=agent_output,
+                    response_body=response_body,
+                    rendered_meta={
+                        **rendered_meta,
+                        "validation_passed": True,
+                        "validation_reason": "patched_field_values",
+                        "attempts": attempt,
+                    },
+                    field_values=field_values,
+                    planner_meta=last_planner_meta,
+                )
+            latest_observation = (
+                "patched_field_values serialization failed; fall back to response_plan"
+            )
+
         response_plan = build_response_plan_tool(
             canonical, agent_output, world_state, raw_text
         )
@@ -97,6 +186,7 @@ def run_agent_loop(
             canonical, response_plan, world_state
         )
         field_values = _refresh_live_timestamps(field_values)
+        last_field_values = field_values  # validation 실패해도 state tracking에 보존
         response_body, rendered_meta = serialize_response_tool(canonical, field_values)
 
         if not response_body:
@@ -127,6 +217,31 @@ def run_agent_loop(
             "correct the response_plan, preserve core members, and reduce complexity"
         )
 
+    # 모든 시도 실패: moto native baseline + resource_state_patches로 직접 직렬화
+    if native_dict is not None:
+        patches = world_state.get("resource_state_patches", {}).get(
+            canonical.service, {}
+        )
+        final_dict = (
+            _apply_resource_patches(deepcopy(native_dict), patches)
+            if patches
+            else native_dict
+        )
+        response_body, rendered_meta = serialize_response_tool(canonical, final_dict)
+        if response_body:
+            return AgentRunResult(
+                agent_output=DEFAULT_OUTPUT,
+                response_body=response_body,
+                rendered_meta={
+                    **rendered_meta,
+                    "validation_passed": True,
+                    "validation_reason": "moto_native_with_patches",
+                    "attempts": max_attempts,
+                },
+                field_values=final_dict,
+                planner_meta=last_planner_meta,
+            )
+
     return AgentRunResult(
         agent_output=DEFAULT_OUTPUT,
         response_body="",
@@ -137,7 +252,7 @@ def run_agent_loop(
             "validation_reason": "agent_loop_exhausted",
             "attempts": max_attempts,
         },
-        field_values={},
+        field_values=last_field_values,
         planner_meta=last_planner_meta,
     )
 
@@ -342,3 +457,71 @@ def _refresh_recursive(data: Any, now: str) -> Any:
     if isinstance(data, list):
         return [_refresh_recursive(item, now) for item in data]
     return data
+
+
+def _apply_resource_patches(data: Any, patches: dict[str, Any]) -> Any:
+    """parsed dict를 재귀 탐색해 *Id 필드가 patches에 있는 리소스에 상태 변경을 적용."""
+    if isinstance(data, dict):
+        resource_id: str | None = None
+        for k, v in data.items():
+            if k.endswith("Id") and isinstance(v, str) and v in patches:
+                resource_id = v
+                break
+        if resource_id:
+            data = dict(data)
+            for patch_key, patch_val in patches[resource_id].items():
+                # 에이전트는 소문자/camelCase를 쓸 수 있고 moto native는 PascalCase를 쓰므로
+                # 대소문자 무시로 기존 키를 찾아 교체한다.
+                matched = next(
+                    (k for k in data if k.lower() == patch_key.lower()), patch_key
+                )
+                data[matched] = _merge_patch_val(data.get(matched), patch_val)
+        return {k: _apply_resource_patches(v, patches) for k, v in data.items()}
+    if isinstance(data, list):
+        return [_apply_resource_patches(item, patches) for item in data]
+    return data
+
+
+def _merge_patch_val(existing: Any, patch: Any) -> Any:
+    """패치 값을 기존 값에 병합 — dict면 재귀적으로 case-insensitive 키 매칭."""
+    if not isinstance(patch, dict) or not isinstance(existing, dict):
+        return patch
+    result = dict(existing)
+    for pk, pv in patch.items():
+        matched = next((k for k in result if k.lower() == pk.lower()), pk)
+        result[matched] = _merge_patch_val(result.get(matched), pv)
+    return result
+
+
+def _parse_native_to_dict(
+    canonical: CanonicalRequest,
+    moto_native_body: str,
+) -> Optional[dict[str, Any]]:
+    """moto native body를 botocore 파서로 Python dict로 변환."""
+    try:
+        from botocore.parsers import ResponseParserFactory
+
+        from moto.core.utils import get_service_model
+
+        svc_model = get_service_model(canonical.service)
+        op_model = svc_model.operation_model(canonical.operation)
+        if op_model.output_shape is None:
+            return None
+        protocol = svc_model.metadata.get("protocol", "json")
+
+        factory = ResponseParserFactory()
+        parser = factory.create_parser(protocol)
+
+        body_bytes = (
+            moto_native_body.encode()
+            if isinstance(moto_native_body, str)
+            else moto_native_body
+        )
+        parsed = parser.parse(
+            {"status_code": 200, "headers": {}, "body": body_bytes},
+            op_model.output_shape,
+        )
+        parsed.pop("ResponseMetadata", None)
+        return parsed
+    except Exception:
+        return None

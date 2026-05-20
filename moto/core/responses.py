@@ -867,6 +867,11 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
             # Moto native 응답을 실제 AWS CLI 형식(botocore 스키마)과 비교하거나,
             # Agent가 이미 이 operation에 응답한 적 있으면 캐시된 응답으로 일관성 유지
             _session_id = extract_session_id_tool(dict(self.headers))
+            # agent_modified_services 기반 fallback 여부를 별도 변수로 추출 —
+            # True면 moto native 결과(body)를 agent에게 baseline으로 전달해 일관성 확보
+            _agent_modified_fallback = has_cached_agent_response_tool(
+                _session_id, self.service_name or "", action or ""
+            )
             # native 응답을 그대로 내보낼지 agent fallback으로 바꿀지 모든 정책을 한 boolean으로 합친다.
             _needs_fallback = self.service_name and (
                 # native 응답이 botocore shape와 맞지 않거나 high-interaction이면 fallback을 탄다.
@@ -874,9 +879,7 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                     self.service_name, self._get_action(), body, status
                 )
                 # 같은 세션에서 이미 agent가 만든 operation이면 일관성을 위해 계속 fallback을 탄다.
-                or has_cached_agent_response_tool(
-                    _session_id, self.service_name or "", action or ""
-                )
+                or _agent_modified_fallback
                 # 이전 agent 응답에서 노출한 리소스 ID가 native not-found로 이어지면 fallback을 탄다.
                 or _session_error_needs_agent_fallback(_session_id, status, body)
                 # curated native 에러가 빈 랩을 노출할 때 fallback을 탄다.
@@ -892,6 +895,7 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
             if _needs_fallback:
                 try:
                     # 원본 request context를 agent에 넘겨 service/action에 맞는 response shape를 만든다.
+                    # agent_modified_services 기반 fallback이면 moto native 결과를 baseline으로 넘긴다.
                     fallback_text = handle_aws_request(
                         service=self.service_name,
                         action=action,
@@ -900,6 +904,7 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                         body=self._agent_body(),
                         reason="Moto native response did not match AWS CLI format",
                         source="responses.call_action.native_validation",
+                        moto_native_body=body if _agent_modified_fallback else None,
                     )
                     self._record_native_history_if_enabled(status, body)
                     return 200, headers, fallback_text

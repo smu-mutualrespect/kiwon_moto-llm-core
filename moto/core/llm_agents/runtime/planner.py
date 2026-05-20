@@ -24,6 +24,8 @@ class AgentOutput:
     field_values: dict[str, Any]
     environment_delta: dict[str, Any]
     tool_requests: list[dict[str, Any]] = field(default_factory=list)
+    patched_field_values: dict[str, Any] | None = field(default=None)
+    field_patches: dict[str, Any] | None = field(default=None)
 
 
 DEFAULT_OUTPUT = AgentOutput(
@@ -137,6 +139,12 @@ def parse_agent_output(raw_text: str) -> AgentOutput:
     )
     tool_requests = [item for item in tool_requests if isinstance(item, dict)][:3]
 
+    _raw_patched = parsed.get("patched_field_values")
+    patched_field_values = _raw_patched if isinstance(_raw_patched, dict) else None
+
+    _raw_field_patches = parsed.get("field_patches")
+    field_patches = _raw_field_patches if isinstance(_raw_field_patches, dict) else None
+
     return AgentOutput(
         intent_phase=intent_phase,
         response_posture=response_posture,
@@ -147,6 +155,8 @@ def parse_agent_output(raw_text: str) -> AgentOutput:
         field_values=field_values,  # type: ignore[arg-type]
         environment_delta=environment_delta,  # type: ignore[arg-type]
         tool_requests=tool_requests,
+        patched_field_values=patched_field_values,
+        field_patches=field_patches,
     )
 
 

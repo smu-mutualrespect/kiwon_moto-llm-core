@@ -169,6 +169,13 @@ def update_world_state_tool(
             exposed_assets.append(asset)
     next_state["exposed_assets"] = exposed_assets
 
+    # agent가 write 연산을 처리했음을 기록 — field_values 유무와 무관하게 항상 실행
+    if not _should_cache_operation(canonical.operation):
+        agent_modified = list(next_state.get("agent_modified_services", []))
+        if canonical.service not in agent_modified:
+            agent_modified.append(canonical.service)
+        next_state["agent_modified_services"] = agent_modified
+
     # Store name-type field values for cross-call consistency (scoped by service)
     if field_values:
         known_names = dict(next_state.get("known_names", {}))
@@ -180,11 +187,21 @@ def update_world_state_tool(
         if not _should_cache_operation(canonical.operation):
             # delete뿐 아니라 create/update/modify 등 모든 쓰기 연산 후 캐시 무효화
             _invalidate_read_cache(next_state, canonical)
-            # 이 서비스의 write를 agent가 처리했음을 기록 — 이후 read도 agent로 라우팅
-            agent_modified = list(next_state.get("agent_modified_services", []))
-            if canonical.service not in agent_modified:
-                agent_modified.append(canonical.service)
-            next_state["agent_modified_services"] = agent_modified
+            # write 연산 결과에서 리소스별 상태 변경 추출 → resource_state_patches 저장
+            # _try_native_as_base가 moto native baseline에 이 패치를 덮어써서 일관성 유지
+            patches = _extract_resource_patches(field_values)
+            if patches:
+                rsp = dict(next_state.get("resource_state_patches", {}))
+                svc_patches = dict(rsp.get(canonical.service, {}))
+                for rid, patch in patches.items():
+                    _prev = svc_patches.get(rid)
+                    _entry: dict[str, Any] = (
+                        dict(_prev) if isinstance(_prev, dict) else {}
+                    )
+                    _entry.update(patch)
+                    svc_patches[rid] = _entry
+                rsp[canonical.service] = svc_patches
+                next_state["resource_state_patches"] = rsp
 
     # Cache full field_values for read operations so repeated calls return identical results
     if field_values and _should_cache_operation(canonical.operation):
@@ -566,3 +583,35 @@ def _derive_account_id(session_id: str) -> str:
     """
     digest = int(hashlib.sha256(session_id.encode()).hexdigest()[:10], 16)
     return str(100000000000 + (digest % 900000000000))
+
+
+_RESOURCE_ID_RE = re.compile(r"^[a-z][a-z0-9-]*-[0-9a-f]{8,}$")
+
+
+def _extract_resource_patches(field_values: Any) -> dict[str, dict[str, Any]]:
+    """write 연산 결과에서 리소스 ID별 상태 변경 정보를 추출.
+
+    배열 내 항목에서 *Id 필드를 key로, 나머지 필드를 patch로 반환한다.
+    예: MonitorInstances → {"i-xxx": {"Monitoring": {"State": "enabled"}}}
+    """
+    patches: dict[str, dict[str, Any]] = {}
+    if not isinstance(field_values, dict):
+        return patches
+    for value in field_values.values():
+        if not isinstance(value, list):
+            continue
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            resource_id: str | None = None
+            patch: dict[str, Any] = {}
+            for k, v in item.items():
+                if k.endswith("Id") and isinstance(v, str) and _RESOURCE_ID_RE.match(v):
+                    resource_id = v
+                else:
+                    patch[k] = v
+            if resource_id and patch:
+                existing = patches.get(resource_id, {})
+                existing.update(patch)
+                patches[resource_id] = existing
+    return patches
