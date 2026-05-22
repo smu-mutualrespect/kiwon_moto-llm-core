@@ -9,12 +9,18 @@ from moto.core.llm_agents.runtime import (
     call_gpt_api_with_meta,
     parse_agent_output,
 )
+from moto.core.llm_agents.runtime.runner import run_agent_loop
 from moto.core.llm_agents.runtime.tool_executor import execute_agent_tool_requests
 from moto.core.llm_agents.runtime.tool_registry import get_available_tool_names
 from moto.core.llm_agents.shape_adapter import adapt_response_plan
 from moto.core.llm_agents.tools.planning_tools import build_response_plan_tool
 from moto.core.llm_agents.tools.render_tools import serialize_response_tool
 from moto.core.llm_agents.tools.request_tools import normalize_request_tool
+from moto.core.llm_agents.tools.state_tools import (
+    get_world_state_tool,
+    has_cached_agent_response_tool,
+    update_world_state_tool,
+)
 from moto.core.llm_agents.tools.validation_tools import (
     build_comparison_points_tool,
     validate_rendered_response_tool,
@@ -456,6 +462,81 @@ def test_shape_adapter_preserves_aws_like_instance_ids(monkeypatch) -> None:
     assert "instanceid-12345abcde" not in response_body
 
 
+def test_agent_write_invalidates_cache_and_routes_only_affected_reads() -> None:
+    session_id = "AKIAWRITEAFFECTEDREAD"
+    headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            f"Credential={session_id}/20260522/us-east-1/ec2/aws4_request"
+        )
+    }
+    current = get_world_state_tool(session_id, headers)
+    current["response_cache"] = {"ec2:DescribeInstances": {"Reservations": []}}
+    canonical = normalize_request_tool(
+        service="ec2",
+        action="MonitorInstances",
+        url="https://ec2.us-east-1.amazonaws.com/",
+        headers=headers,
+        body="Action=MonitorInstances&InstanceId.1=i-1234567890abcdef0",
+    )
+
+    update_world_state_tool(
+        session_id,
+        current,
+        canonical,
+        DEFAULT_OUTPUT,
+        {"assets": []},
+        field_values=None,
+    )
+
+    updated = get_world_state_tool(session_id, headers)
+    assert updated["response_cache"] == {}
+    assert has_cached_agent_response_tool(session_id, "ec2", "DescribeInstances")
+    assert not has_cached_agent_response_tool(session_id, "ec2", "DescribeImages")
+
+
+def test_moto_native_baseline_applies_resource_state_patches() -> None:
+    instance_id = "i-1234567890abcdef0"
+    native_body = (
+        '<DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">'
+        "<reservationSet><item><reservationId>r-12345678</reservationId>"
+        "<ownerId>123456789012</ownerId><instancesSet><item>"
+        f"<instanceId>{instance_id}</instanceId>"
+        "<imageId>ami-12345678</imageId><instanceType>t2.micro</instanceType>"
+        "<monitoring><state>disabled</state></monitoring>"
+        "</item></instancesSet></item></reservationSet>"
+        "</DescribeInstancesResponse>"
+    )
+    canonical = normalize_request_tool(
+        service="ec2",
+        action="DescribeInstances",
+        url="https://ec2.us-east-1.amazonaws.com/",
+        headers={},
+        body="Action=DescribeInstances",
+    )
+    world_state = {
+        "consistency_locks": {"account_id": "123456789012"},
+        "resource_state_patches": {
+            "ec2": {instance_id: {"Monitoring": {"State": "enabled"}}}
+        },
+    }
+
+    result = run_agent_loop(
+        canonical=canonical,
+        world_state=world_state,
+        history_context="",
+        reason="unit test",
+        source="unit_test",
+        moto_native_body=native_body,
+    )
+
+    assert result.planner_meta["provider"] == "moto_native_patches"
+    assert "<instanceId>i-1234567890abcdef0</instanceId>" in result.response_body
+    assert "<instanceType>t2.micro</instanceType>" in result.response_body
+    assert "<state>enabled</state>" in result.response_body
+    assert "<state>disabled</state>" not in result.response_body
+
+
 def test_create_delete_reuses_session_resource_identifiers(monkeypatch) -> None:
     headers = {
         "Authorization": (
@@ -827,11 +908,13 @@ def test_call_gpt_api_uses_direct_openai_by_default(monkeypatch) -> None:
         headers: dict[str, str],
         payload: dict[str, object],
         timeout: float,
+        session: object,
     ) -> dict[str, object]:
         captured["url"] = url
         captured["headers"] = headers
         captured["payload"] = payload
         captured["timeout"] = timeout
+        captured["session"] = session
         return {
             "id": "resp_test",
             "usage": {"input_tokens": 7, "output_tokens": 5, "total_tokens": 12},
@@ -872,11 +955,13 @@ def test_call_gpt_api_uses_anthropic_when_only_anthropic_key(monkeypatch) -> Non
         headers: dict[str, str],
         payload: dict[str, object],
         timeout: float,
+        session: object,
     ) -> dict[str, object]:
         captured["url"] = url
         captured["headers"] = headers
         captured["payload"] = payload
         captured["timeout"] = timeout
+        captured["session"] = session
         return {
             "id": "msg_test",
             "model": "claude-test",

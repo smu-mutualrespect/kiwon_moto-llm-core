@@ -33,17 +33,18 @@ def has_cached_agent_response_tool(
 ) -> bool:
     """에이전트가 이 operation을 이전에 응답한 적 있는지 확인 (agent_responses 기반).
 
-    같은 세션에서 agent가 해당 서비스의 write 연산을 처리한 적 있으면,
-    이후 동일 서비스의 read 연산도 agent로 라우팅해 일관성을 유지한다.
+    같은 세션에서 agent가 write 연산을 처리했고 그 write가 현재 read operation에
+    영향을 줄 수 있으면 agent/native-patch 경로로 라우팅해 일관성을 유지한다.
     """
     with _lock:
         state = _session_state.get(session_id, {})
     if f"{service}:{operation}" in state.get("agent_responses", []):
         return True
-    # agent가 이 서비스의 write를 처리한 이력이 있고 현재 요청이 read면 agent로 라우팅
-    if service in state.get("agent_modified_services", []):
-        if _should_cache_operation(operation):
-            return True
+    # 서비스 단위 broad routing은 너무 넓다. write operation이 실제로 영향을 주는
+    # read operation만 라우팅한다.
+    affected_reads = state.get("affected_read_operations", [])
+    if f"{service}:{operation}" in affected_reads:
+        return True
     return False
 
 
@@ -175,6 +176,16 @@ def update_world_state_tool(
         if canonical.service not in agent_modified:
             agent_modified.append(canonical.service)
         next_state["agent_modified_services"] = agent_modified
+        _invalidate_read_cache(next_state, canonical)
+
+        affected_reads = list(next_state.get("affected_read_operations", []))
+        for read_service, read_operation in _affected_read_operations_for_write(
+            canonical
+        ):
+            read_key = f"{read_service}:{read_operation}"
+            if read_key not in affected_reads:
+                affected_reads.append(read_key)
+        next_state["affected_read_operations"] = affected_reads[-50:]
 
     # Store name-type field values for cross-call consistency (scoped by service)
     if field_values:
@@ -185,8 +196,6 @@ def update_world_state_tool(
         _merge_resource_registry(resource_registry, canonical, field_values)
         next_state["resource_registry"] = resource_registry
         if not _should_cache_operation(canonical.operation):
-            # delete뿐 아니라 create/update/modify 등 모든 쓰기 연산 후 캐시 무효화
-            _invalidate_read_cache(next_state, canonical)
             # write 연산 결과에서 리소스별 상태 변경 추출 → resource_state_patches 저장
             # _try_native_as_base가 moto native baseline에 이 패치를 덮어써서 일관성 유지
             patches = _extract_resource_patches(field_values)
@@ -322,6 +331,38 @@ _CACHE_OPERATION_PREFIXES = (
 
 def _should_cache_operation(operation: str) -> bool:
     return operation.lower().startswith(_CACHE_OPERATION_PREFIXES)
+
+
+_WRITE_TO_AFFECTED_READS: dict[tuple[str, str], tuple[tuple[str, str], ...]] = {
+    ("ec2", "MonitorInstances"): (("ec2", "DescribeInstances"),),
+    ("ec2", "UnmonitorInstances"): (("ec2", "DescribeInstances"),),
+    ("ec2", "RunInstances"): (("ec2", "DescribeInstances"),),
+    ("ec2", "StartInstances"): (("ec2", "DescribeInstances"),),
+    ("ec2", "StopInstances"): (("ec2", "DescribeInstances"),),
+    ("ec2", "TerminateInstances"): (("ec2", "DescribeInstances"),),
+    ("ec2", "RebootInstances"): (("ec2", "DescribeInstances"),),
+    ("ec2", "CreateSecurityGroup"): (("ec2", "DescribeSecurityGroups"),),
+    ("ec2", "AuthorizeSecurityGroupIngress"): (("ec2", "DescribeSecurityGroups"),),
+    ("ec2", "AuthorizeSecurityGroupEgress"): (("ec2", "DescribeSecurityGroups"),),
+    ("ec2", "RevokeSecurityGroupIngress"): (("ec2", "DescribeSecurityGroups"),),
+    ("ec2", "RevokeSecurityGroupEgress"): (("ec2", "DescribeSecurityGroups"),),
+    ("ec2", "CreateVolume"): (("ec2", "DescribeVolumes"),),
+    ("ec2", "AttachVolume"): (
+        ("ec2", "DescribeVolumes"),
+        ("ec2", "DescribeInstances"),
+    ),
+    ("ec2", "DetachVolume"): (
+        ("ec2", "DescribeVolumes"),
+        ("ec2", "DescribeInstances"),
+    ),
+    ("ec2", "DeleteVolume"): (("ec2", "DescribeVolumes"),),
+}
+
+
+def _affected_read_operations_for_write(
+    canonical: CanonicalRequest,
+) -> tuple[tuple[str, str], ...]:
+    return _WRITE_TO_AFFECTED_READS.get((canonical.service, canonical.operation), ())
 
 
 def _param_cache_key(
