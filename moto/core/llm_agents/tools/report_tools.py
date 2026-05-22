@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -18,20 +19,84 @@ from moto.core.llm_agents.tools.state_tools import (
 _REPORT_DIR = Path(os.getenv("MOTO_HONEYPOT_REPORT_DIR", "reports"))
 _IDLE_SECONDS = float(os.getenv("MOTO_HONEYPOT_SESSION_TIMEOUT", "300"))
 _REPORT_MODEL = os.getenv("MOTO_LLM_REPORT_MODEL") or None
-_REPORT_MAX_TOKENS = int(os.getenv("MOTO_LLM_REPORT_MAX_TOKENS", "3000"))
+_REPORT_MAX_TOKENS = int(os.getenv("MOTO_LLM_REPORT_MAX_TOKENS", "5000"))
+
+# TLP(Traffic Light Protocol) 등급 — 조직 설정에 따라 변경
+_TLP_LEVEL = os.getenv("MOTO_HONEYPOT_TLP", "TLP:AMBER")
+
+# 작업(operation) → MITRE ATT&CK 기법 ID 정적 매핑
+# ref: https://attack.mitre.org/matrices/enterprise/cloud/
+_OP_TO_TECHNIQUE: dict[tuple[str, str], str] = {
+    ("sts", "GetCallerIdentity"):           "T1087.004",
+    ("iam", "ListUsers"):                   "T1087.004",
+    ("iam", "ListRoles"):                   "T1069.003",
+    ("iam", "ListPolicies"):                "T1069.003",
+    ("iam", "GetPolicy"):                   "T1069.003",
+    ("iam", "GetPolicyVersion"):            "T1069.003",
+    ("iam", "ListAttachedUserPolicies"):    "T1069.003",
+    ("iam", "ListAttachedRolePolicies"):    "T1069.003",
+    ("iam", "AttachUserPolicy"):            "T1098",
+    ("iam", "AttachRolePolicy"):            "T1098",
+    ("iam", "CreateUser"):                  "T1136.003",
+    ("iam", "CreateAccessKey"):             "T1098",
+    ("iam", "PutUserPolicy"):               "T1098",
+    ("ec2", "DescribeInstances"):           "T1580",
+    ("ec2", "DescribeSecurityGroups"):      "T1580",
+    ("ec2", "DescribeVpcs"):                "T1580",
+    ("ec2", "DescribeSubnets"):             "T1580",
+    ("s3", "ListBuckets"):                  "T1619",
+    ("s3", "GetBucketPolicy"):              "T1619",
+    ("s3", "GetBucketAcl"):                 "T1619",
+    ("s3", "GetObject"):                    "T1530",
+    ("s3", "PutObject"):                    "T1537",
+    ("secretsmanager", "ListSecrets"):      "T1526",
+    ("secretsmanager", "GetSecretValue"):   "T1555.006",
+    ("secretsmanager", "DescribeSecret"):   "T1526",
+    ("ssm", "GetParameter"):                "T1552.001",
+    ("ssm", "GetParameters"):               "T1552.001",
+    ("lambda", "ListFunctions"):            "T1526",
+    ("lambda", "GetFunction"):              "T1526",
+    ("eks", "ListClusters"):                "T1580",
+    ("rds", "DescribeDBInstances"):         "T1580",
+    ("cloudtrail", "DescribeTrails"):       "T1580",
+    ("cloudtrail", "StopLogging"):          "T1562.008",
+    ("guardduty", "ListDetectors"):         "T1580",
+    ("guardduty", "DeleteDetector"):        "T1562",
+}
+
+# 기법 ID → (전술, 기법 이름) 한국어 매핑
+_TECHNIQUE_META: dict[str, tuple[str, str]] = {
+    "T1087.004":  ("Discovery",              "계정 탐색: 클라우드 계정"),
+    "T1069.003":  ("Discovery",              "권한 그룹 탐색: 클라우드 그룹"),
+    "T1098":      ("Privilege Escalation",   "계정 조작"),
+    "T1136.003":  ("Persistence",            "계정 생성: 클라우드 계정"),
+    "T1580":      ("Discovery",              "클라우드 인프라 탐색"),
+    "T1619":      ("Discovery",              "클라우드 스토리지 객체 탐색"),
+    "T1530":      ("Collection",             "클라우드 스토리지 객체 수집"),
+    "T1537":      ("Exfiltration",           "클라우드 계정으로 데이터 이전"),
+    "T1526":      ("Discovery",              "클라우드 서비스 탐색"),
+    "T1555.006":  ("Credential Access",      "패스워드 저장소: 클라우드 시크릿 관리 서비스"),
+    "T1552.001":  ("Credential Access",      "비보호 자격증명: 파일 내 자격증명"),
+    "T1562.008":  ("Defense Evasion",        "보안 도구 비활성화: 클라우드 로그 비활성화"),
+    "T1562":      ("Defense Evasion",        "보안 도구 비활성화"),
+}
 
 
 def generate_attack_report(session_id: str) -> str:
-    """Generate a TTP-mapped Markdown report for the session and save it to disk.
+    """세션의 TTP 매핑 Markdown 보고서를 생성하고 디스크에 저장합니다.
 
-    Returns the path of the saved report file, or "" if no activity was recorded.
+    저장된 보고서 파일 경로를 반환하며, 기록된 활동이 없으면 빈 문자열을 반환합니다.
     """
     state = get_session_state_snapshot(session_id)
     action_log = get_full_action_log(session_id)
     if not action_log:
         return ""
 
-    prompt = _build_report_prompt(session_id, state, action_log)
+    timing = _compute_timing_analysis(action_log)
+    iocs = _extract_iocs(session_id, state, action_log, timing)
+    ttp_map = _map_ttps(action_log)
+
+    prompt = _build_report_prompt(session_id, state, action_log, timing, iocs, ttp_map)
     report_md, _ = call_gpt_api_with_meta(
         prompt,
         model=_REPORT_MODEL,
@@ -41,17 +106,65 @@ def generate_attack_report(session_id: str) -> str:
 
     _REPORT_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    path = _REPORT_DIR / f"{session_id[:16]}_{timestamp}.md"
-    path.write_text(report_md, encoding="utf-8")
+    base = f"{session_id[:16]}_{timestamp}"
+
+    md_path = _REPORT_DIR / f"{base}.md"
+    md_path.write_text(report_md, encoding="utf-8")
+
+    # ATT&CK Navigator 레이어 JSON 함께 저장
+    navigator_path = _REPORT_DIR / f"{base}_navigator.json"
+    navigator_path.write_text(
+        json.dumps(generate_navigator_layer(session_id, ttp_map), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
     mark_session_reported(session_id)
-    return str(path)
+    return str(md_path)
+
+
+def generate_navigator_layer(
+    session_id: str,
+    ttp_map: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """관찰된 TTP를 MITRE ATT&CK Navigator 레이어 JSON으로 반환합니다.
+
+    https://mitre-attack.github.io/attack-navigator/ 에서 import 해서 시각화할 수 있습니다.
+    """
+    if ttp_map is None:
+        action_log = get_full_action_log(session_id)
+        ttp_map = _map_ttps(action_log)
+
+    techniques = []
+    for tech_id, info in ttp_map.items():
+        score = min(100, len(info["evidence"]) * 25)  # evidence 수에 비례
+        techniques.append({
+            "techniqueID": tech_id,
+            "score": score,
+            "color": _score_to_color(score),
+            "comment": f"관찰 횟수: {len(info['evidence'])}회 | 작업: {', '.join(info['evidence'][:3])}",
+            "enabled": True,
+        })
+
+    return {
+        "name": f"PhantomGate — {session_id[:16]}",
+        "versions": {"attack": "14", "navigator": "4.9", "layer": "4.5"},
+        "domain": "enterprise-attack",
+        "description": f"PhantomGate 허니팟 세션 {session_id} 에서 관찰된 TTP",
+        "filters": {"platforms": ["AWS"]},
+        "gradient": {
+            "colors": ["#ffffff", "#ff6666"],
+            "minValue": 0,
+            "maxValue": 100,
+        },
+        "techniques": techniques,
+    }
 
 
 def start_report_watcher(idle_seconds: float = _IDLE_SECONDS) -> None:
-    """Start a background daemon thread that auto-generates reports for idle sessions.
+    """비활성 세션에 대해 자동으로 보고서를 생성하는 백그라운드 데몬 스레드를 시작합니다.
 
-    A session is considered finished when it has had no new requests for
-    idle_seconds (default 300 s / 5 min, configurable via MOTO_HONEYPOT_SESSION_TIMEOUT).
+    idle_seconds(기본 300초 / 5분) 동안 요청이 없으면 세션 종료로 판단합니다.
+    MOTO_HONEYPOT_SESSION_TIMEOUT 환경변수로 조정 가능합니다.
     """
     def _watch() -> None:
         while True:
@@ -65,88 +178,267 @@ def start_report_watcher(idle_seconds: float = _IDLE_SECONDS) -> None:
     threading.Thread(target=_watch, daemon=True, name="honeypot-report-watcher").start()
 
 
+# ──────────────────────────────────────────────
+# 내부 헬퍼 함수들
+# ──────────────────────────────────────────────
+
+def _compute_timing_analysis(action_log: list[dict[str, Any]]) -> dict[str, Any]:
+    """요청 간격 분석으로 자동화 도구 사용 여부를 추정합니다."""
+    if len(action_log) < 2:
+        return {}
+    timestamps: list[datetime] = []
+    for entry in action_log:
+        try:
+            ts = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
+            timestamps.append(ts)
+        except Exception:
+            pass
+    if len(timestamps) < 2:
+        return {}
+    intervals = [
+        (timestamps[i + 1] - timestamps[i]).total_seconds()
+        for i in range(len(timestamps) - 1)
+    ]
+    avg = sum(intervals) / len(intervals)
+    deviation = (sum((x - avg) ** 2 for x in intervals) / len(intervals)) ** 0.5
+    total_sec = (timestamps[-1] - timestamps[0]).total_seconds()
+    # 평균 간격 10초 이하 또는 편차가 매우 작으면 자동화 의심
+    is_automated = avg <= 10.0 or deviation < 2.0
+    return {
+        "avg_interval_sec": round(avg, 1),
+        "min_interval_sec": round(min(intervals), 1),
+        "max_interval_sec": round(max(intervals), 1),
+        "std_deviation_sec": round(deviation, 1),
+        "total_duration_sec": round(total_sec, 1),
+        "is_automated": is_automated,
+    }
+
+
+def _extract_iocs(
+    session_id: str,
+    state: dict[str, Any],
+    action_log: list[dict[str, Any]],
+    timing: dict[str, Any],
+) -> dict[str, Any]:
+    """액션 로그와 세션 상태에서 침해지표(IOC)를 추출합니다."""
+    iocs: dict[str, Any] = {}
+
+    # 자격증명 식별자
+    if session_id.startswith(("AKIA", "ASIA", "AROA")):
+        iocs["access_key_id"] = session_id
+        iocs["credential_type"] = (
+            "장기 자격증명 (IAM User Key)"
+            if session_id.startswith("AKIA")
+            else "임시 자격증명 (STS Session Token)"
+        )
+    else:
+        iocs["session_identifier"] = session_id
+
+    # 타겟 계정
+    account_id = state.get("consistency_locks", {}).get("account_id")
+    if account_id:
+        iocs["target_account_id"] = account_id
+
+    # 탐색한 서비스 목록
+    iocs["targeted_services"] = sorted({e["service"] for e in action_log})
+
+    # 고위험 작업 (risk_score >= 0.6)
+    iocs["high_risk_operations"] = list(dict.fromkeys(
+        f"{e['service']}:{e['operation']}"
+        for e in action_log
+        if float(e.get("risk_score", 0)) >= 0.6
+    ))
+
+    # 발견한 자산 ARN
+    iocs["discovered_arns"] = [
+        a for a in state.get("exposed_assets", [])
+        if str(a).startswith("arn:aws:")
+    ][:20]
+
+    # 자동화 도구 징후
+    if timing.get("is_automated"):
+        iocs["automation_indicator"] = (
+            f"평균 요청 간격 {timing['avg_interval_sec']}초 / 표준편차 {timing['std_deviation_sec']}초 "
+            f"— 자동화 스크립트 또는 공격 도구 사용 의심"
+        )
+
+    # 공격 지속시간
+    if timing.get("total_duration_sec"):
+        iocs["attack_duration"] = f"{timing['total_duration_sec']}초 ({round(timing['total_duration_sec']/60, 1)}분)"
+
+    return iocs
+
+
+def _map_ttps(action_log: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """관찰된 작업을 MITRE ATT&CK 기법으로 매핑합니다.
+
+    반환 형식: {technique_id: {tactic, name, evidence: [op, ...], confidence}}
+    """
+    result: dict[str, dict[str, Any]] = {}
+    for entry in action_log:
+        key = (entry["service"], entry["operation"])
+        tech_id = _OP_TO_TECHNIQUE.get(key)
+        if not tech_id:
+            continue
+        tactic, name = _TECHNIQUE_META.get(tech_id, ("Unknown", tech_id))
+        op_str = f"{entry['service']}:{entry['operation']} [{entry['timestamp']}]"
+        if tech_id not in result:
+            result[tech_id] = {"tactic": tactic, "name": name, "evidence": []}
+        if op_str not in result[tech_id]["evidence"]:
+            result[tech_id]["evidence"].append(op_str)
+
+    # 신뢰도 설정: evidence 2개 이상 = High, 1개 = Medium
+    for info in result.values():
+        info["confidence"] = "High" if len(info["evidence"]) >= 2 else "Medium"
+
+    return result
+
+
 def _build_report_prompt(
     session_id: str,
     state: dict[str, Any],
     action_log: list[dict[str, Any]],
+    timing: dict[str, Any],
+    iocs: dict[str, Any],
+    ttp_map: dict[str, dict[str, Any]],
 ) -> str:
     start_time = state.get("session_start_time", "unknown")
     risk_score = float(state.get("risk_score", 0.0))
-    exposed_assets = state.get("exposed_assets", [])
     account_id = state.get("consistency_locks", {}).get("account_id", "unknown")
 
     total_ops = len(action_log)
     services_used = sorted({e["service"] for e in action_log})
     phases_seen = list(dict.fromkeys(e["phase"] for e in action_log))
 
-    # Compute approximate session duration
-    if total_ops >= 2:
-        first_ts = action_log[0]["timestamp"]
-        last_ts = action_log[-1]["timestamp"]
-        duration_str = f"{first_ts} → {last_ts}"
-    else:
-        duration_str = start_time
-
-    # Build timeline
+    # 타임라인 (증거 연결)
     timeline_lines: list[str] = []
-    for entry in action_log:
-        ts = entry["timestamp"]
-        phase = entry["phase"]
-        svc = entry["service"]
-        op = entry["operation"]
-        src = entry["source"]
-        risk = entry.get("risk_score", 0.0)
+    for i, entry in enumerate(action_log, 1):
         assets = entry.get("new_assets", [])
-        line = f"[{ts}] [{phase}] {svc}:{op} ({src}) risk={risk:.2f}"
+        line = (
+            f"[{i:02d}] {entry['timestamp']} | [{entry['phase']}] "
+            f"{entry['service']}:{entry['operation']} | "
+            f"출처={entry['source']} | risk={entry.get('risk_score', 0):.2f}"
+        )
         if assets:
-            line += f"  → {', '.join(str(a) for a in assets[:3])}"
+            line += f" | 발견자산={', '.join(str(a) for a in assets[:2])}"
         timeline_lines.append(line)
 
-    assets_block = "\n".join(f"- {a}" for a in exposed_assets[:60]) or "None detected"
+    # TTP 사전 매핑 블록 (LLM 참고용)
+    ttp_lines: list[str] = []
+    for tech_id, info in ttp_map.items():
+        evidence_str = " / ".join(info["evidence"][:3])
+        ttp_lines.append(
+            f"- {tech_id} | {info['tactic']} | {info['name']} | "
+            f"신뢰도={info['confidence']} | 증거={evidence_str}"
+        )
+
+    # IOC 블록
+    ioc_lines = [f"- {k}: {v}" for k, v in iocs.items()]
+
+    # 자동화 분석
+    auto_note = ""
+    if timing:
+        auto_note = (
+            f"평균 요청 간격: {timing.get('avg_interval_sec')}초, "
+            f"표준편차: {timing.get('std_deviation_sec')}초, "
+            f"전체 공격 지속: {timing.get('total_duration_sec')}초, "
+            f"자동화 의심: {'예' if timing.get('is_automated') else '아니오'}"
+        )
 
     return f"""당신은 AWS 클라우드 허니팟 공격 세션을 분석하는 위협 인텔리전스 분석가입니다.
-아래 데이터를 분석하여 완전하고 전문적인 Markdown 위협 인텔리전스 보고서를 **한국어**로 작성하세요.
+아래의 모든 데이터를 바탕으로 실제 침해사고 대응(IR) 보고서 형식에 맞는 완전한 Markdown 보고서를 **한국어**로 작성하세요.
 
-## Session Metadata
-- Session ID: {session_id}
-- Target Account (fake): {account_id}
-- Session Start: {start_time}
-- Activity Window: {duration_str}
-- Total API Operations: {total_ops}
-- Services Probed: {", ".join(services_used)}
-- Attack Phase Progression: {" → ".join(phases_seen)}
-- Final Risk Score: {risk_score:.2f} / 1.00
+══════════════ 분석 데이터 ══════════════
 
-## Full Attack Timeline
+[세션 정보]
+- 세션 ID: {session_id}
+- 대상 계정 (가상): {account_id}
+- 세션 시작: {start_time}
+- 총 API 호출 수: {total_ops}
+- 탐색 서비스: {", ".join(services_used)}
+- 공격 단계 흐름: {" → ".join(phases_seen)}
+- 최종 위험 점수: {risk_score:.2f} / 1.00
+
+[요청 타이밍 분석]
+{auto_note or "데이터 없음"}
+
+[전체 공격 타임라인 (증거 번호 포함)]
 {chr(10).join(timeline_lines)}
 
-## Exposed / Discovered Assets
-{assets_block}
+[사전 TTP 매핑 (참고용 — 아래 보고서에서 Procedure/Evidence 보강 필요)]
+{chr(10).join(ttp_lines) or "매핑 없음"}
+
+[침해지표 (IOC)]
+{chr(10).join(ioc_lines)}
+
+══════════════ 보고서 형식 ══════════════
+
+아래 구조를 **반드시** 따르세요. 각 섹션에서 위 데이터의 실제 증거 번호([01], [02] 등)를 인용하세요.
 
 ---
 
-아래 형식의 Markdown 보고서를 **한국어**로 작성하세요. 타임라인의 실제 작업을 구체적으로 언급하세요.
+# 침해사고 분석 보고서
 
-# 위협 인텔리전스 보고서 — {session_id[:16]}
+**문서 등급**: {_TLP_LEVEL}
+**작성일**: {datetime.now(timezone.utc).strftime("%Y년 %m월 %d일")}
+**대상 세션**: {session_id[:16]}
 
-## 요약
-(공격자가 누구이며 무엇을 했는지, 전반적인 심각도를 2–3문장으로 요약)
+---
 
-## 공격 타임라인
-(타임스탬프 순서대로 주요 이벤트 목록, 단계별로 그룹화)
+## 1. 개요 (Executive Summary)
+(경영진/비기술자 대상 — 3문장 이내. 언제, 누가, 무엇을, 어떤 영향인지)
 
-## MITRE ATT&CK TTP 매핑
-| 전술(Tactic) | 기법 ID | 기법 이름 | 관찰된 작업 |
-|------------|--------|----------|-----------|
-(관찰된 각 기법마다 행 추가)
+## 2. 사고 개요
+| 항목 | 내용 |
+|------|------|
+| 사고 유형 | |
+| 공격 벡터 | |
+| 최초 탐지 시각 | |
+| 공격 지속 시간 | |
+| 영향 받은 서비스 | |
+| 최종 위험도 | |
 
-## 노출 자산 및 영향 평가
-(발견된 리소스 목록, 민감도 및 잠재적 피해 범위 평가)
+## 3. 공격 흐름 분석 (Attack Chain)
+(단계별 서술 — Kill Chain 또는 ATT&CK 전술 순서로. 각 단계마다 증거 번호 인용)
 
-## 위험도 평가
-**전체 심각도: 심각 / 높음 / 중간 / 낮음**
-(타임라인 근거와 함께 판단 이유 설명)
+## 4. MITRE ATT&CK TTP 매핑
 
-## 권고 사항
-(구체적이고 실행 가능한 방어 조치 3–5개)
+| 전술 | 기법 ID | 기법 이름 | Procedure (공격자가 구체적으로 한 행위) | 증거 | 신뢰도 |
+|------|--------|----------|--------------------------------------|------|--------|
+(위 사전 매핑을 기반으로 Procedure를 구체적으로 서술. 증거 칸에는 타임라인 번호 인용)
+
+## 5. 침해지표 (IOC)
+
+### 5-1. 자격증명 지표
+### 5-2. 행위 기반 지표 (Behavioral IOC)
+### 5-3. 자산 기반 지표 (Asset IOC)
+
+## 6. 영향 평가
+### 기밀성 (Confidentiality)
+### 무결성 (Integrity)
+### 가용성 (Availability)
+
+## 7. 위험도 평가
+**전체 심각도**: 심각 / 높음 / 중간 / 낮음
+(판단 근거를 구체적 증거와 함께 서술)
+
+## 8. 대응 조치 권고
+### 즉각 조치 (24시간 이내)
+### 단기 조치 (1주일 이내)
+### 중장기 조치 (1개월 이내)
+
+## 9. 재발 방지 및 교훈 (Lessons Learned)
+
+---
+*본 보고서는 PhantomGate 허니팟 시스템에 의해 자동 생성되었습니다.*
 """
+
+
+def _score_to_color(score: int) -> str:
+    if score >= 75:
+        return "#ff0000"
+    if score >= 50:
+        return "#ff6600"
+    if score >= 25:
+        return "#ffaa00"
+    return "#ffdd00"
