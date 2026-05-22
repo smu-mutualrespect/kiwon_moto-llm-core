@@ -526,6 +526,62 @@ def create_llm_fallback_app() -> Flask:
     warmup_provider_connection()
     start_report_watcher()
 
+    # ── 디버그 서버 (개발/테스트 전용 — 5556 포트) ────────────────────────
+    import json as _json
+    import threading as _threading
+    import time as _time
+
+    from moto.core.llm_agents.tools.report_tools import generate_attack_report
+    from moto.core.llm_agents.tools.state_tools import (
+        _action_log as _al,
+    )
+    from moto.core.llm_agents.tools.state_tools import (
+        _last_activity as _la,
+    )
+    from moto.core.llm_agents.tools.state_tools import (
+        _reported_sessions as _rs,
+    )
+    from moto.core.llm_agents.tools.state_tools import (
+        _session_state as _ss,
+    )
+
+    def _start_debug_server() -> None:
+        debug_app = Flask("moto_debug")
+
+        @debug_app.route("/sessions")
+        def sessions() -> Response:
+            result = {}
+            for sid in set(list(_al.keys()) + list(_ss.keys())):
+                result[sid] = {
+                    "action_count": len(_al.get(sid, [])),
+                    "actions": [
+                        f"{e['service']}:{e['operation']} [{e['source']}]"
+                        for e in _al.get(sid, [])
+                    ],
+                    "risk_score": _ss.get(sid, {}).get("risk_score"),
+                    "idle_sec": round(_time.time() - _la[sid], 1) if sid in _la else None,
+                    "reported": sid in _rs,
+                }
+            return Response(
+                _json.dumps(result, ensure_ascii=False, indent=2),
+                content_type="application/json",
+            )
+
+        @debug_app.route("/report/<session_id>", methods=["POST"])
+        def trigger_report(session_id: str) -> Response:
+            path = generate_attack_report(session_id)
+            return Response(
+                _json.dumps({"path": path}), content_type="application/json"
+            )
+
+        from werkzeug.serving import make_server as _make_server
+
+        srv = _make_server("127.0.0.1", 5556, debug_app)
+        _threading.Thread(target=srv.serve_forever, daemon=True, name="moto-debug-server").start()
+
+    _start_debug_server()
+    # ─────────────────────────────────────────────────────────────────────
+
     # 루트 path 요청도 fallback agent로 들어오게 한다.
     @fallback_app.route("/", defaults={"path": ""}, methods=HTTP_METHODS)
     # 임의 path 요청도 fallback agent로 들어오게 한다.
