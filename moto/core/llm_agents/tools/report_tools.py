@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from moto.core.llm_agents.runtime.provider import call_gpt_api_with_meta
+from moto.core.llm_agents.tools.attack_db import get_technique
+from moto.core.llm_agents.tools.stix_export import generate_stix_bundle
 from moto.core.llm_agents.tools.state_tools import (
     get_full_action_log,
     get_idle_sessions,
@@ -111,10 +113,18 @@ def generate_attack_report(session_id: str) -> str:
     md_path = _REPORT_DIR / f"{base}.md"
     md_path.write_text(report_md, encoding="utf-8")
 
-    # ATT&CK Navigator 레이어 JSON 함께 저장
+    # ATT&CK Navigator 레이어 JSON
     navigator_path = _REPORT_DIR / f"{base}_navigator.json"
     navigator_path.write_text(
         json.dumps(generate_navigator_layer(session_id, ttp_map), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    # STIX 2.1 번들 (SIEM/OpenCTI/MISP import용)
+    stix_path = _REPORT_DIR / f"{base}.stix.json"
+    stix_bundle = generate_stix_bundle(session_id, iocs, ttp_map, state, action_log)
+    stix_path.write_text(
+        json.dumps(stix_bundle, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
@@ -272,7 +282,8 @@ def _extract_iocs(
 def _map_ttps(action_log: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """관찰된 작업을 MITRE ATT&CK 기법으로 매핑합니다.
 
-    반환 형식: {technique_id: {tactic, name, evidence: [op, ...], confidence}}
+    attack_db에서 기법 상세 정보(description, detection, url, platforms, data_sources)를 조회합니다.
+    반환 형식: {technique_id: {tactic, name, description, detection, url, evidence, confidence}}
     """
     result: dict[str, dict[str, Any]] = {}
     for entry in action_log:
@@ -280,16 +291,30 @@ def _map_ttps(action_log: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         tech_id = _OP_TO_TECHNIQUE.get(key)
         if not tech_id:
             continue
-        tactic, name = _TECHNIQUE_META.get(tech_id, ("Unknown", tech_id))
         op_str = f"{entry['service']}:{entry['operation']} [{entry['timestamp']}]"
         if tech_id not in result:
-            result[tech_id] = {"tactic": tactic, "name": name, "evidence": []}
+            # attack_db에서 풍부한 메타데이터 조회 (캐시/오프라인 폴백 자동 처리)
+            meta = get_technique(tech_id)
+            result[tech_id] = {
+                "tactic":      meta.get("tactic", "Unknown"),
+                "name":        meta.get("name", tech_id),
+                "description": meta.get("description", ""),
+                "detection":   meta.get("detection", ""),
+                "url":         meta.get("url", f"https://attack.mitre.org/techniques/{tech_id.replace('.', '/')}/"),
+                "platforms":   meta.get("platforms", []),
+                "data_sources": meta.get("data_sources", []),
+                "evidence":    [],
+            }
         if op_str not in result[tech_id]["evidence"]:
             result[tech_id]["evidence"].append(op_str)
 
-    # 신뢰도 설정: evidence 2개 이상 = High, 1개 = Medium
+    # IC 스타일 신뢰도:
+    #   High   — 동일 기법 2회 이상 직접 관찰
+    #   Medium — 1회 관찰, 정황 증거
+    #   Low    — 간접 추론
     for info in result.values():
-        info["confidence"] = "High" if len(info["evidence"]) >= 2 else "Medium"
+        ev_count = len(info["evidence"])
+        info["confidence"] = "High" if ev_count >= 2 else "Medium" if ev_count == 1 else "Low"
 
     return result
 
@@ -323,13 +348,15 @@ def _build_report_prompt(
             line += f" | 발견자산={', '.join(str(a) for a in assets[:2])}"
         timeline_lines.append(line)
 
-    # TTP 사전 매핑 블록 (LLM 참고용)
+    # TTP 사전 매핑 블록 (LLM 참고용 — detection guidance 포함)
     ttp_lines: list[str] = []
     for tech_id, info in ttp_map.items():
         evidence_str = " / ".join(info["evidence"][:3])
+        detection = info.get("detection", "")[:200]
         ttp_lines.append(
             f"- {tech_id} | {info['tactic']} | {info['name']} | "
             f"신뢰도={info['confidence']} | 증거={evidence_str}"
+            + (f" | 탐지가이드={detection}" if detection else "")
         )
 
     # IOC 블록
