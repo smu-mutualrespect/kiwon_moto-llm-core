@@ -497,10 +497,12 @@ class FakeMultipart(BaseModel):
         full_etag = md5_hash()
         full_etag.update(bytes(md5s))
         if checksum_algo:
-            encoded_checksum = compute_checksum(checksum, checksum_algo).decode("utf-8")
+            encoded_checksum = compute_checksum(bytes(checksum), checksum_algo).decode(
+                "utf-8"
+            )
         else:
             encoded_checksum = None
-        return total, f"{full_etag.hexdigest()}-{count}", encoded_checksum
+        return bytes(total), f"{full_etag.hexdigest()}-{count}", encoded_checksum
 
     def set_part(self, part_id: int, value: bytes) -> FakeKey:
         if part_id < 1:

@@ -2469,10 +2469,10 @@ class RDSBackend(BaseBackend):
             region = identifier.split(":")[3]
             identifier = identifier.split(":")[-1]
         backend = self.get_backend("rds", region=region)
-        snapshots = backend.resource_map[resource_type]
-        if identifier not in snapshots:
+        snapshots = backend.resource_map[resource_type]  # type: ignore[index]
+        if identifier not in snapshots:  # type: ignore[operator]
             raise not_found_exception(identifier)
-        return snapshots[identifier]
+        return snapshots[identifier]  # type: ignore[index]
 
     def get_db_snapshot(self, identifier: str) -> DBSnapshot:
         return self.get_snapshot(
@@ -2496,7 +2496,7 @@ class RDSBackend(BaseBackend):
             for backend in backend_container.values():
                 if backend.region_name != self.region_name:
                     continue
-                snapshots = backend.resource_map[resource_type].values()
+                snapshots = backend.resource_map[resource_type].values()  # type: ignore[index, union-attr, attr-defined]
                 for snapshot in snapshots:
                     if self.account_id in snapshot.attributes["restore"]:
                         snapshots_shared.append(snapshot)
@@ -3775,8 +3775,8 @@ class RDSBackend(BaseBackend):
     def _find_resource(self, resource_type: str, resource_name: str) -> Any:
         for resource_class, resources in self.resource_map.items():
             if resource_type == getattr(resource_class, "resource_type", ""):
-                if resource_name in resources:
-                    return resources[resource_name]
+                if resource_name in resources:  # type: ignore[operator]
+                    return resources[resource_name]  # type: ignore[index]
         # The resource_name is the last part of the ARN
         # Usually that's the name - but for DBProxies, the last part of the ARN is a random identifier
         # So we can't just use the dict-keys - we have to manually check the ARN

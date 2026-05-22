@@ -314,7 +314,7 @@ class DomainDispatcherApplication:
             }
             for service_name, response_class in service_to_response.items():
                 resp = response_class()
-                resp.region = region
+                resp.region = region  # type: ignore[assignment]
                 action = resp._get_action_from_method_and_request_uri(
                     method=environ["REQUEST_METHOD"],
                     request_uri=environ["PATH_INFO"],
