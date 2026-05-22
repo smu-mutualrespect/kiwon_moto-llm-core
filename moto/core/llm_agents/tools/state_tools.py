@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import threading
+import time as _time
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
@@ -13,6 +14,36 @@ from .request_tools import CanonicalRequest
 _session_storage: dict[str, list[dict[str, str]]] = {}
 _session_state: dict[str, dict[str, Any]] = {}
 _lock = threading.RLock()
+_action_log: dict[str, list[dict[str, Any]]] = {}
+_last_activity: dict[str, float] = {}
+_reported_sessions: set[str] = set()
+
+
+def _append_action_log(
+    session_id: str,
+    service: str,
+    operation: str,
+    phase: str,
+    risk_score: float,
+    source: str,
+    *,
+    status_code: int = 200,
+    new_assets: list[str] | None = None,
+) -> None:
+    entry: dict[str, Any] = {
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "service": service,
+        "operation": operation,
+        "phase": phase,
+        "risk_score": round(risk_score, 3),
+        "source": source,
+        "status_code": status_code,
+    }
+    if new_assets:
+        entry["new_assets"] = new_assets
+    with _lock:
+        _action_log.setdefault(session_id, []).append(entry)
+        _last_activity[session_id] = _time.time()
 
 
 def has_any_agent_response(session_id: str) -> bool:
@@ -225,6 +256,16 @@ def update_world_state_tool(
     with _lock:
         _session_state[session_id] = next_state
 
+    _append_action_log(
+        session_id,
+        canonical.service,
+        canonical.operation,
+        agent_output.intent_phase,
+        next_state["risk_score"],
+        source="agent",
+        new_assets=rendered_meta.get("assets") or [],
+    )
+
 
 def record_native_interaction_tool(
     session_id: str,
@@ -291,6 +332,16 @@ def record_native_interaction_tool(
             _invalidate_read_cache(next_state, canonical)
 
         _session_state[session_id] = next_state
+
+    _append_action_log(
+        session_id,
+        canonical.service,
+        canonical.operation,
+        next_state.get("phase", "recon"),
+        float(next_state.get("risk_score", 0.2)),
+        source="moto_native",
+        status_code=status_code,
+    )
 
 
 def _extract_assets_from_response(response_body: str) -> list[str]:
@@ -656,3 +707,29 @@ def _extract_resource_patches(field_values: Any) -> dict[str, dict[str, Any]]:
                 existing.update(patch)
                 patches[resource_id] = existing
     return patches
+
+
+def get_full_action_log(session_id: str) -> list[dict[str, Any]]:
+    with _lock:
+        return list(_action_log.get(session_id, []))
+
+
+def get_session_state_snapshot(session_id: str) -> dict[str, Any]:
+    with _lock:
+        return deepcopy(_session_state.get(session_id, {}))
+
+
+def get_idle_sessions(idle_seconds: float) -> list[str]:
+    """Return session IDs inactive for idle_seconds that have not yet been reported."""
+    now = _time.time()
+    with _lock:
+        return [
+            sid
+            for sid, last in _last_activity.items()
+            if now - last >= idle_seconds and sid not in _reported_sessions
+        ]
+
+
+def mark_session_reported(session_id: str) -> None:
+    with _lock:
+        _reported_sessions.add(session_id)

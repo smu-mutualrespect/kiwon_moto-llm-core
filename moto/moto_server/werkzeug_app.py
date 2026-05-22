@@ -521,8 +521,10 @@ def create_llm_fallback_app() -> Flask:
 
     # LLM API 연결을 백그라운드에서 미리 수립해 첫 요청의 핸드셰이크 오버헤드를 줄인다.
     from moto.core.llm_agents.runtime.provider import warmup_provider_connection
+    from moto.core.llm_agents.tools.report_tools import start_report_watcher
 
     warmup_provider_connection()
+    start_report_watcher()
 
     # 루트 path 요청도 fallback agent로 들어오게 한다.
     @fallback_app.route("/", defaults={"path": ""}, methods=HTTP_METHODS)

@@ -34,22 +34,30 @@ def warmup_provider_connection() -> None:
 
 
 def call_gpt_api(
-    prompt: str, *, model: Optional[str] = None, timeout: float = 20.0
+    prompt: str,
+    *,
+    model: Optional[str] = None,
+    timeout: float = 20.0,
+    max_tokens: Optional[int] = None,
 ) -> str:
-    text, _ = call_gpt_api_with_meta(prompt, model=model, timeout=timeout)
+    text, _ = call_gpt_api_with_meta(prompt, model=model, timeout=timeout, max_tokens=max_tokens)
     return text
 
 
 def call_gpt_api_with_meta(
-    prompt: str, *, model: Optional[str] = None, timeout: float = 20.0
+    prompt: str,
+    *,
+    model: Optional[str] = None,
+    timeout: float = 20.0,
+    max_tokens: Optional[int] = None,
 ) -> tuple[str, dict[str, Any]]:
     _load_dotenv_if_present()
     provider = select_provider()
     if provider == "anthropic":
-        return _call_anthropic_api_with_meta(prompt, model=model, timeout=timeout)
+        return _call_anthropic_api_with_meta(prompt, model=model, timeout=timeout, max_tokens=max_tokens)
     if provider != "openai":
         raise ValueError(f"Unsupported MOTO_LLM_PROVIDER: {provider}")
-    return _call_openai_api_with_meta(prompt, model=model, timeout=timeout)
+    return _call_openai_api_with_meta(prompt, model=model, timeout=timeout, max_tokens=max_tokens)
 
 
 def select_provider() -> str:
@@ -64,14 +72,18 @@ def select_provider() -> str:
 
 
 def _call_openai_api_with_meta(
-    prompt: str, *, model: Optional[str] = None, timeout: float = 20.0
+    prompt: str,
+    *,
+    model: Optional[str] = None,
+    timeout: float = 20.0,
+    max_tokens: Optional[int] = None,
 ) -> tuple[str, dict[str, Any]]:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("OPENAI_API_KEY is not set")
     payload = {
         "model": model or os.getenv("MOTO_LLM_OPENAI_MODEL", "gpt-5-mini"),
-        "max_output_tokens": int(os.getenv("MOTO_LLM_OPENAI_MAX_OUTPUT_TOKENS", "60")),
+        "max_output_tokens": max_tokens if max_tokens is not None else int(os.getenv("MOTO_LLM_OPENAI_MAX_OUTPUT_TOKENS", "60")),
         "reasoning": {
             "effort": os.getenv("MOTO_LLM_OPENAI_REASONING_EFFORT", "minimal")
         },
@@ -106,7 +118,11 @@ def _call_openai_api_with_meta(
 
 
 def _call_anthropic_api_with_meta(
-    prompt: str, *, model: Optional[str] = None, timeout: float = 20.0
+    prompt: str,
+    *,
+    model: Optional[str] = None,
+    timeout: float = 20.0,
+    max_tokens: Optional[int] = None,
 ) -> tuple[str, dict[str, Any]]:
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
@@ -114,7 +130,7 @@ def _call_anthropic_api_with_meta(
     payload = {
         "model": model
         or os.getenv("MOTO_LLM_ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
-        "max_tokens": int(
+        "max_tokens": max_tokens if max_tokens is not None else int(
             os.getenv(
                 "MOTO_LLM_ANTHROPIC_MAX_OUTPUT_TOKENS",
                 os.getenv("MOTO_LLM_OPENAI_MAX_OUTPUT_TOKENS", "60"),
