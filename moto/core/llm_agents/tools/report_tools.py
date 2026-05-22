@@ -15,6 +15,7 @@ from moto.core.llm_agents.tools.state_tools import (
     get_full_action_log,
     get_idle_sessions,
     get_session_state_snapshot,
+    is_session_reported,
     mark_session_reported,
 )
 from moto.core.llm_agents.tools.stix_export import generate_stix_bundle
@@ -75,6 +76,8 @@ def generate_attack_report(session_id: str) -> str:
 
     저장된 보고서 파일 경로를 반환하며, 기록된 활동이 없으면 빈 문자열을 반환합니다.
     """
+    if is_session_reported(session_id):
+        return ""
     state = get_session_state_snapshot(session_id)
     action_log = get_full_action_log(session_id)
     if not action_log:

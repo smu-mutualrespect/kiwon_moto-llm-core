@@ -734,5 +734,14 @@ def get_idle_sessions(idle_seconds: float) -> list[str]:
 
 
 def mark_session_reported(session_id: str) -> None:
+    """세션을 보고 완료로 표시하고 메모리에서 세션 데이터를 해제합니다."""
     with _lock:
         _reported_sessions.add(session_id)
+        _action_log.pop(session_id, None)
+        _session_state.pop(session_id, None)
+        _last_activity.pop(session_id, None)
+
+
+def is_session_reported(session_id: str) -> bool:
+    with _lock:
+        return session_id in _reported_sessions

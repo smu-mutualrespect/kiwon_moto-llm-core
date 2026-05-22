@@ -17,7 +17,6 @@ from typing import Any
 _PHANTOMGATE_IDENTITY_ID = (
     f"identity--{uuid.uuid5(uuid.NAMESPACE_DNS, 'phantomgate.honeypot')}"
 )
-_MITRE_IDENTITY_ID = "identity--c78cb6e5-0c4b-4611-8297-d1b8b55e40b5"  # MITRE 공식 ID
 
 
 def generate_stix_bundle(
@@ -25,7 +24,7 @@ def generate_stix_bundle(
     iocs: dict[str, Any],
     ttp_map: dict[str, dict[str, Any]],
     state: dict[str, Any],
-    action_log: list[dict[str, Any]],  # noqa: ARG001 — used by sub-builders
+    action_log: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """세션 데이터를 STIX 2.1 Bundle 형식으로 변환합니다.
 
