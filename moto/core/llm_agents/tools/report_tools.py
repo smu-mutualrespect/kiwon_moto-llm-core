@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
 from datetime import datetime, timezone
+
+_log = logging.getLogger(__name__)
 from pathlib import Path
 from typing import Any
 
@@ -64,23 +67,6 @@ _OP_TO_TECHNIQUE: dict[tuple[str, str], str] = {
     ("cloudtrail", "StopLogging"):          "T1562.008",
     ("guardduty", "ListDetectors"):         "T1580",
     ("guardduty", "DeleteDetector"):        "T1562",
-}
-
-# 기법 ID → (전술, 기법 이름) 한국어 매핑
-_TECHNIQUE_META: dict[str, tuple[str, str]] = {
-    "T1087.004":  ("Discovery",              "계정 탐색: 클라우드 계정"),
-    "T1069.003":  ("Discovery",              "권한 그룹 탐색: 클라우드 그룹"),
-    "T1098":      ("Privilege Escalation",   "계정 조작"),
-    "T1136.003":  ("Persistence",            "계정 생성: 클라우드 계정"),
-    "T1580":      ("Discovery",              "클라우드 인프라 탐색"),
-    "T1619":      ("Discovery",              "클라우드 스토리지 객체 탐색"),
-    "T1530":      ("Collection",             "클라우드 스토리지 객체 수집"),
-    "T1537":      ("Exfiltration",           "클라우드 계정으로 데이터 이전"),
-    "T1526":      ("Discovery",              "클라우드 서비스 탐색"),
-    "T1555.006":  ("Credential Access",      "패스워드 저장소: 클라우드 시크릿 관리 서비스"),
-    "T1552.001":  ("Credential Access",      "비보호 자격증명: 파일 내 자격증명"),
-    "T1562.008":  ("Defense Evasion",        "보안 도구 비활성화: 클라우드 로그 비활성화"),
-    "T1562":      ("Defense Evasion",        "보안 도구 비활성화"),
 }
 
 
@@ -183,7 +169,7 @@ def start_report_watcher(idle_seconds: float = _IDLE_SECONDS) -> None:
                 try:
                     generate_attack_report(sid)
                 except Exception:
-                    pass
+                    _log.exception("보고서 생성 실패 — session_id=%s", sid)
 
     threading.Thread(target=_watch, daemon=True, name="honeypot-report-watcher").start()
 

@@ -8,13 +8,13 @@
 """
 from __future__ import annotations
 
-import hashlib
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 
-_PHANTOMGATE_IDENTITY_ID = "identity--b0e4b5c2-1234-4a56-89ab-phantomgate01"
+# uuid5(NAMESPACE_DNS, "phantomgate.honeypot") — 고정 결정론적 UUID
+_PHANTOMGATE_IDENTITY_ID = f"identity--{uuid.uuid5(uuid.NAMESPACE_DNS, 'phantomgate.honeypot')}"
 _MITRE_IDENTITY_ID = "identity--c78cb6e5-0c4b-4611-8297-d1b8b55e40b5"  # MITRE 공식 ID
 
 
@@ -23,7 +23,7 @@ def generate_stix_bundle(
     iocs: dict[str, Any],
     ttp_map: dict[str, dict[str, Any]],
     state: dict[str, Any],
-    action_log: list[dict[str, Any]],
+    action_log: list[dict[str, Any]],  # noqa: ARG001 — used by sub-builders
 ) -> dict[str, Any]:
     """세션 데이터를 STIX 2.1 Bundle 형식으로 변환합니다.
 
@@ -40,10 +40,14 @@ def generate_stix_bundle(
     actor_id = _det_uuid("threat-actor", session_id)
     observed_id = _det_uuid("observed-data", session_id)
 
+    # indicator 먼저 빌드 — observed-data.object_refs에 참조하기 위해
+    indicators = _build_indicators(session_id, iocs, action_log, now_ts)
+    indicator_ids = [ind["id"] for ind in indicators]
+
     objects: list[dict[str, Any]] = [
         _phantomgate_identity(),
-        _threat_actor(session_id, actor_id, state, now_ts),
-        _observed_data(observed_id, session_id, action_log, now_ts),
+        _threat_actor(session_id, actor_id, state, action_log, now_ts),
+        _observed_data(observed_id, session_id, action_log, indicator_ids, now_ts),
     ]
 
     attack_pattern_ids: dict[str, str] = {}
@@ -54,17 +58,15 @@ def generate_stix_bundle(
         # threat-actor -[uses]-> attack-pattern
         objects.append(_relationship(
             _det_uuid("relationship", f"{actor_id}-uses-{ap_id}"),
-            "uses", actor_id, ap_id, now_ts,
+            "uses", f"threat-actor--{actor_id}", f"attack-pattern--{ap_id}", now_ts,
         ))
 
-    # IOC → indicator 객체
-    indicators = _build_indicators(session_id, iocs, action_log, now_ts)
     for ind in indicators:
         objects.append(ind)
         # indicator -[indicates]-> threat-actor
         objects.append(_relationship(
             _det_uuid("relationship", f"{ind['id']}-indicates-{actor_id}"),
-            "indicates", ind["id"], actor_id, now_ts,
+            "indicates", ind["id"], f"threat-actor--{actor_id}", now_ts,
         ))
 
     # observed-data → attack-pattern sighting
@@ -72,7 +74,8 @@ def generate_stix_bundle(
         evidence = ttp_map[tech_id].get("evidence", [])
         objects.append(_sighting(
             _det_uuid("sighting", f"{observed_id}-{ap_id}"),
-            observed_id, ap_id, len(evidence), action_log, now_ts,
+            f"observed-data--{observed_id}", f"attack-pattern--{ap_id}",
+            len(evidence), action_log, now_ts,
         ))
 
     return {
@@ -104,6 +107,7 @@ def _threat_actor(
     session_id: str,
     actor_id: str,
     state: dict[str, Any],
+    action_log: list[dict[str, Any]],
     now_ts: str,
 ) -> dict[str, Any]:
     risk = float(state.get("risk_score", 0.0))
@@ -112,6 +116,7 @@ def _threat_actor(
         else "intermediate" if risk >= 0.5
         else "novice"
     )
+    services = ", ".join(sorted({e["service"] for e in action_log})) or "unknown"
     return {
         "type": "threat-actor",
         "spec_version": "2.1",
@@ -129,7 +134,7 @@ def _threat_actor(
         "description": (
             f"허니팟 세션 {session_id}에서 관찰된 공격자. "
             f"최종 위험 점수: {risk:.2f}/1.00. "
-            f"대상 서비스: {', '.join(sorted({e['service'] for e in []}))}"
+            f"대상 서비스: {services}"
         ),
     }
 
@@ -172,10 +177,13 @@ def _observed_data(
     obs_id: str,
     session_id: str,
     action_log: list[dict[str, Any]],
+    object_refs: list[str],
     now_ts: str,
 ) -> dict[str, Any]:
     first_ts = action_log[0]["timestamp"] if action_log else now_ts
     last_ts = action_log[-1]["timestamp"] if action_log else now_ts
+    # STIX 2.1 스펙: object_refs는 non-empty 필요 — indicator ID 또는 identity를 참조
+    refs = object_refs if object_refs else [_PHANTOMGATE_IDENTITY_ID]
     return {
         "type": "observed-data",
         "spec_version": "2.1",
@@ -186,7 +194,7 @@ def _observed_data(
         "first_observed": first_ts,
         "last_observed": last_ts,
         "number_observed": len(action_log),
-        "object_refs": [],
+        "object_refs": refs,
         "description": f"세션 {session_id}에서 관찰된 {len(action_log)}건의 AWS API 호출",
         "labels": ["honeypot-session"],
         "x_phantomgate_session_id": session_id,
@@ -293,12 +301,6 @@ def _relationship(
     target_ref: str,
     now_ts: str,
 ) -> dict[str, Any]:
-    # source/target_ref에 type prefix 추가 (이미 붙어있으면 그대로)
-    def _full(ref: str) -> str:
-        if "--" in ref:
-            return ref
-        return ref
-
     return {
         "type": "relationship",
         "spec_version": "2.1",
@@ -348,8 +350,8 @@ def _det_uuid(namespace: str, value: str) -> str:
 
 
 def _det_uuid_raw(value: str) -> str:
-    digest = hashlib.sha256(value.encode()).hexdigest()
-    return f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:32]}"
+    """bundle ID용 결정론적 UUID v5 (RFC 4122 준수)."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"phantomgate.bundle.{value}"))
 
 
 def _now_str() -> str:
