@@ -104,8 +104,8 @@ def _build_report_prompt(
 
     assets_block = "\n".join(f"- {a}" for a in exposed_assets[:60]) or "None detected"
 
-    return f"""You are a threat intelligence analyst reviewing an AWS cloud honeypot attack session.
-Analyze the data below and produce a complete, professional Markdown threat intelligence report.
+    return f"""당신은 AWS 클라우드 허니팟 공격 세션을 분석하는 위협 인텔리전스 분석가입니다.
+아래 데이터를 분석하여 완전하고 전문적인 Markdown 위협 인텔리전스 보고서를 **한국어**로 작성하세요.
 
 ## Session Metadata
 - Session ID: {session_id}
@@ -125,28 +125,28 @@ Analyze the data below and produce a complete, professional Markdown threat inte
 
 ---
 
-Write the following Markdown report. Be specific and reference actual operations from the timeline.
+아래 형식의 Markdown 보고서를 **한국어**로 작성하세요. 타임라인의 실제 작업을 구체적으로 언급하세요.
 
-# Threat Intelligence Report — {session_id[:16]}
+# 위협 인텔리전스 보고서 — {session_id[:16]}
 
-## Executive Summary
-(2–3 sentences covering who attacked, what they did, and the overall severity)
+## 요약
+(공격자가 누구이며 무엇을 했는지, 전반적인 심각도를 2–3문장으로 요약)
 
-## Attack Timeline
-(chronological list of key events with timestamps; group by phase)
+## 공격 타임라인
+(타임스탬프 순서대로 주요 이벤트 목록, 단계별로 그룹화)
 
-## MITRE ATT&CK TTP Mapping
-| Tactic | Technique ID | Technique Name | Observed Operation |
-|--------|-------------|----------------|-------------------|
-(fill in rows for each distinct technique observed)
+## MITRE ATT&CK TTP 매핑
+| 전술(Tactic) | 기법 ID | 기법 이름 | 관찰된 작업 |
+|------------|--------|----------|-----------|
+(관찰된 각 기법마다 행 추가)
 
-## Exposed Assets & Impact Assessment
-(list discovered resources; assess sensitivity and potential blast radius)
+## 노출 자산 및 영향 평가
+(발견된 리소스 목록, 민감도 및 잠재적 피해 범위 평가)
 
-## Risk Assessment
-**Overall Severity: Critical / High / Medium / Low**
-(justify with evidence from the timeline)
+## 위험도 평가
+**전체 심각도: 심각 / 높음 / 중간 / 낮음**
+(타임라인 근거와 함께 판단 이유 설명)
 
-## Recommendations
-(3–5 concrete, actionable defensive measures)
+## 권고 사항
+(구체적이고 실행 가능한 방어 조치 3–5개)
 """
