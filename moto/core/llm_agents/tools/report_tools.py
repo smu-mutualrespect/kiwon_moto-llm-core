@@ -6,20 +6,20 @@ import os
 import threading
 import time
 from datetime import datetime, timezone
-
-_log = logging.getLogger(__name__)
 from pathlib import Path
 from typing import Any
 
 from moto.core.llm_agents.runtime.provider import call_gpt_api_with_meta
 from moto.core.llm_agents.tools.attack_db import get_technique
-from moto.core.llm_agents.tools.stix_export import generate_stix_bundle
 from moto.core.llm_agents.tools.state_tools import (
     get_full_action_log,
     get_idle_sessions,
     get_session_state_snapshot,
     mark_session_reported,
 )
+from moto.core.llm_agents.tools.stix_export import generate_stix_bundle
+
+_log = logging.getLogger(__name__)
 
 _REPORT_DIR = Path(os.getenv("MOTO_HONEYPOT_REPORT_DIR", "reports"))
 _IDLE_SECONDS = float(os.getenv("MOTO_HONEYPOT_SESSION_TIMEOUT", "300"))
@@ -32,41 +32,41 @@ _TLP_LEVEL = os.getenv("MOTO_HONEYPOT_TLP", "TLP:AMBER")
 # 작업(operation) → MITRE ATT&CK 기법 ID 정적 매핑
 # ref: https://attack.mitre.org/matrices/enterprise/cloud/
 _OP_TO_TECHNIQUE: dict[tuple[str, str], str] = {
-    ("sts", "GetCallerIdentity"):           "T1087.004",
-    ("iam", "ListUsers"):                   "T1087.004",
-    ("iam", "ListRoles"):                   "T1069.003",
-    ("iam", "ListPolicies"):                "T1069.003",
-    ("iam", "GetPolicy"):                   "T1069.003",
-    ("iam", "GetPolicyVersion"):            "T1069.003",
-    ("iam", "ListAttachedUserPolicies"):    "T1069.003",
-    ("iam", "ListAttachedRolePolicies"):    "T1069.003",
-    ("iam", "AttachUserPolicy"):            "T1098",
-    ("iam", "AttachRolePolicy"):            "T1098",
-    ("iam", "CreateUser"):                  "T1136.003",
-    ("iam", "CreateAccessKey"):             "T1098",
-    ("iam", "PutUserPolicy"):               "T1098",
-    ("ec2", "DescribeInstances"):           "T1580",
-    ("ec2", "DescribeSecurityGroups"):      "T1580",
-    ("ec2", "DescribeVpcs"):                "T1580",
-    ("ec2", "DescribeSubnets"):             "T1580",
-    ("s3", "ListBuckets"):                  "T1619",
-    ("s3", "GetBucketPolicy"):              "T1619",
-    ("s3", "GetBucketAcl"):                 "T1619",
-    ("s3", "GetObject"):                    "T1530",
-    ("s3", "PutObject"):                    "T1537",
-    ("secretsmanager", "ListSecrets"):      "T1526",
-    ("secretsmanager", "GetSecretValue"):   "T1555.006",
-    ("secretsmanager", "DescribeSecret"):   "T1526",
-    ("ssm", "GetParameter"):                "T1552.001",
-    ("ssm", "GetParameters"):               "T1552.001",
-    ("lambda", "ListFunctions"):            "T1526",
-    ("lambda", "GetFunction"):              "T1526",
-    ("eks", "ListClusters"):                "T1580",
-    ("rds", "DescribeDBInstances"):         "T1580",
-    ("cloudtrail", "DescribeTrails"):       "T1580",
-    ("cloudtrail", "StopLogging"):          "T1562.008",
-    ("guardduty", "ListDetectors"):         "T1580",
-    ("guardduty", "DeleteDetector"):        "T1562",
+    ("sts", "GetCallerIdentity"): "T1087.004",
+    ("iam", "ListUsers"): "T1087.004",
+    ("iam", "ListRoles"): "T1069.003",
+    ("iam", "ListPolicies"): "T1069.003",
+    ("iam", "GetPolicy"): "T1069.003",
+    ("iam", "GetPolicyVersion"): "T1069.003",
+    ("iam", "ListAttachedUserPolicies"): "T1069.003",
+    ("iam", "ListAttachedRolePolicies"): "T1069.003",
+    ("iam", "AttachUserPolicy"): "T1098",
+    ("iam", "AttachRolePolicy"): "T1098",
+    ("iam", "CreateUser"): "T1136.003",
+    ("iam", "CreateAccessKey"): "T1098",
+    ("iam", "PutUserPolicy"): "T1098",
+    ("ec2", "DescribeInstances"): "T1580",
+    ("ec2", "DescribeSecurityGroups"): "T1580",
+    ("ec2", "DescribeVpcs"): "T1580",
+    ("ec2", "DescribeSubnets"): "T1580",
+    ("s3", "ListBuckets"): "T1619",
+    ("s3", "GetBucketPolicy"): "T1619",
+    ("s3", "GetBucketAcl"): "T1619",
+    ("s3", "GetObject"): "T1530",
+    ("s3", "PutObject"): "T1537",
+    ("secretsmanager", "ListSecrets"): "T1526",
+    ("secretsmanager", "GetSecretValue"): "T1555.006",
+    ("secretsmanager", "DescribeSecret"): "T1526",
+    ("ssm", "GetParameter"): "T1552.001",
+    ("ssm", "GetParameters"): "T1552.001",
+    ("lambda", "ListFunctions"): "T1526",
+    ("lambda", "GetFunction"): "T1526",
+    ("eks", "ListClusters"): "T1580",
+    ("rds", "DescribeDBInstances"): "T1580",
+    ("cloudtrail", "DescribeTrails"): "T1580",
+    ("cloudtrail", "StopLogging"): "T1562.008",
+    ("guardduty", "ListDetectors"): "T1580",
+    ("guardduty", "DeleteDetector"): "T1562",
 }
 
 
@@ -102,7 +102,9 @@ def generate_attack_report(session_id: str) -> str:
     # ATT&CK Navigator 레이어 JSON
     navigator_path = _REPORT_DIR / f"{base}_navigator.json"
     navigator_path.write_text(
-        json.dumps(generate_navigator_layer(session_id, ttp_map), ensure_ascii=False, indent=2),
+        json.dumps(
+            generate_navigator_layer(session_id, ttp_map), ensure_ascii=False, indent=2
+        ),
         encoding="utf-8",
     )
 
@@ -133,13 +135,15 @@ def generate_navigator_layer(
     techniques = []
     for tech_id, info in ttp_map.items():
         score = min(100, len(info["evidence"]) * 25)  # evidence 수에 비례
-        techniques.append({
-            "techniqueID": tech_id,
-            "score": score,
-            "color": _score_to_color(score),
-            "comment": f"관찰 횟수: {len(info['evidence'])}회 | 작업: {', '.join(info['evidence'][:3])}",
-            "enabled": True,
-        })
+        techniques.append(
+            {
+                "techniqueID": tech_id,
+                "score": score,
+                "color": _score_to_color(score),
+                "comment": f"관찰 횟수: {len(info['evidence'])}회 | 작업: {', '.join(info['evidence'][:3])}",
+                "enabled": True,
+            }
+        )
 
     return {
         "name": f"PhantomGate — {session_id[:16]}",
@@ -162,6 +166,7 @@ def start_report_watcher(idle_seconds: float = _IDLE_SECONDS) -> None:
     idle_seconds(기본 300초 / 5분) 동안 요청이 없으면 세션 종료로 판단합니다.
     MOTO_HONEYPOT_SESSION_TIMEOUT 환경변수로 조정 가능합니다.
     """
+
     def _watch() -> None:
         while True:
             time.sleep(60)
@@ -177,6 +182,7 @@ def start_report_watcher(idle_seconds: float = _IDLE_SECONDS) -> None:
 # ──────────────────────────────────────────────
 # 내부 헬퍼 함수들
 # ──────────────────────────────────────────────
+
 
 def _compute_timing_analysis(action_log: list[dict[str, Any]]) -> dict[str, Any]:
     """요청 간격 분석으로 자동화 도구 사용 여부를 추정합니다."""
@@ -239,16 +245,17 @@ def _extract_iocs(
     iocs["targeted_services"] = sorted({e["service"] for e in action_log})
 
     # 고위험 작업 (risk_score >= 0.6)
-    iocs["high_risk_operations"] = list(dict.fromkeys(
-        f"{e['service']}:{e['operation']}"
-        for e in action_log
-        if float(e.get("risk_score", 0)) >= 0.6
-    ))
+    iocs["high_risk_operations"] = list(
+        dict.fromkeys(
+            f"{e['service']}:{e['operation']}"
+            for e in action_log
+            if float(e.get("risk_score", 0)) >= 0.6
+        )
+    )
 
     # 발견한 자산 ARN
     iocs["discovered_arns"] = [
-        a for a in state.get("exposed_assets", [])
-        if str(a).startswith("arn:aws:")
+        a for a in state.get("exposed_assets", []) if str(a).startswith("arn:aws:")
     ][:20]
 
     # 자동화 도구 징후
@@ -260,7 +267,9 @@ def _extract_iocs(
 
     # 공격 지속시간
     if timing.get("total_duration_sec"):
-        iocs["attack_duration"] = f"{timing['total_duration_sec']}초 ({round(timing['total_duration_sec']/60, 1)}분)"
+        iocs["attack_duration"] = (
+            f"{timing['total_duration_sec']}초 ({round(timing['total_duration_sec'] / 60, 1)}분)"
+        )
 
     return iocs
 
@@ -282,14 +291,17 @@ def _map_ttps(action_log: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             # attack_db에서 풍부한 메타데이터 조회 (캐시/오프라인 폴백 자동 처리)
             meta = get_technique(tech_id)
             result[tech_id] = {
-                "tactic":      meta.get("tactic", "Unknown"),
-                "name":        meta.get("name", tech_id),
+                "tactic": meta.get("tactic", "Unknown"),
+                "name": meta.get("name", tech_id),
                 "description": meta.get("description", ""),
-                "detection":   meta.get("detection", ""),
-                "url":         meta.get("url", f"https://attack.mitre.org/techniques/{tech_id.replace('.', '/')}/"),
-                "platforms":   meta.get("platforms", []),
+                "detection": meta.get("detection", ""),
+                "url": meta.get(
+                    "url",
+                    f"https://attack.mitre.org/techniques/{tech_id.replace('.', '/')}/",
+                ),
+                "platforms": meta.get("platforms", []),
                 "data_sources": meta.get("data_sources", []),
-                "evidence":    [],
+                "evidence": [],
             }
         if op_str not in result[tech_id]["evidence"]:
             result[tech_id]["evidence"].append(op_str)
@@ -300,7 +312,9 @@ def _map_ttps(action_log: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     #   Low    — 간접 추론
     for info in result.values():
         ev_count = len(info["evidence"])
-        info["confidence"] = "High" if ev_count >= 2 else "Medium" if ev_count == 1 else "Low"
+        info["confidence"] = (
+            "High" if ev_count >= 2 else "Medium" if ev_count == 1 else "Low"
+        )
 
     return result
 

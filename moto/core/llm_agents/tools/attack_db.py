@@ -6,6 +6,7 @@
 
 오프라인 환경 또는 다운로드 실패 시 내장 정적 데이터로 폴백합니다.
 """
+
 from __future__ import annotations
 
 import json
@@ -24,7 +25,10 @@ _STIX_URL = (
 )
 
 _CACHE_PATH = Path(
-    os.getenv("MOTO_ATTACK_DB_CACHE", str(Path.home() / ".cache" / "phantomgate" / "attack_db.json"))
+    os.getenv(
+        "MOTO_ATTACK_DB_CACHE",
+        str(Path.home() / ".cache" / "phantomgate" / "attack_db.json"),
+    )
 )
 
 _db: dict[str, dict[str, Any]] | None = None
@@ -50,7 +54,9 @@ def get_technique(technique_id: str) -> dict[str, Any]:
     데이터가 없으면 id/name만 담긴 최소 dict을 반환합니다.
     """
     db = _get_db()
-    return db.get(technique_id, {"id": technique_id, "name": technique_id, "tactic": "Unknown"})
+    return db.get(
+        technique_id, {"id": technique_id, "name": technique_id, "tactic": "Unknown"}
+    )
 
 
 def refresh(force: bool = False) -> int:
@@ -70,6 +76,7 @@ def refresh(force: bool = False) -> int:
 # ──────────────────────────────────────────────
 # 내부 구현
 # ──────────────────────────────────────────────
+
 
 def _get_db() -> dict[str, dict[str, Any]]:
     global _db
@@ -117,11 +124,19 @@ def _download_and_build() -> dict[str, dict[str, Any]] | None:
 
         ext_refs = obj.get("external_references", [])
         att_id = next(
-            (r["external_id"] for r in ext_refs if r.get("source_name") == "mitre-attack"),
+            (
+                r["external_id"]
+                for r in ext_refs
+                if r.get("source_name") == "mitre-attack"
+            ),
             None,
         )
         att_url = next(
-            (r.get("url", "") for r in ext_refs if r.get("source_name") == "mitre-attack"),
+            (
+                r.get("url", "")
+                for r in ext_refs
+                if r.get("source_name") == "mitre-attack"
+            ),
             "",
         )
         if not att_id:
@@ -174,76 +189,94 @@ def _static_fallback() -> dict[str, dict[str, Any]]:
     """다운로드 실패 시 핵심 클라우드 기법만 담은 내장 데이터를 반환합니다."""
     return {
         "T1087.004": {
-            "id": "T1087.004", "name": "Account Discovery: Cloud Account",
+            "id": "T1087.004",
+            "name": "Account Discovery: Cloud Account",
             "tactic": "Discovery",
             "description": "공격자가 클라우드 환경의 계정 목록을 수집합니다.",
             "detection": "GetCallerIdentity, ListUsers 등 IAM 열거 API 모니터링.",
             "url": "https://attack.mitre.org/techniques/T1087/004/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Service: Cloud Service Enumeration"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Service: Cloud Service Enumeration"],
         },
         "T1069.003": {
-            "id": "T1069.003", "name": "Permission Groups Discovery: Cloud Groups",
+            "id": "T1069.003",
+            "name": "Permission Groups Discovery: Cloud Groups",
             "tactic": "Discovery",
             "description": "공격자가 클라우드 권한 그룹 및 역할을 열거합니다.",
             "detection": "ListRoles, ListPolicies 등 IAM 탐색 API 모니터링.",
             "url": "https://attack.mitre.org/techniques/T1069/003/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Service: Cloud Service Enumeration"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Service: Cloud Service Enumeration"],
         },
         "T1098": {
-            "id": "T1098", "name": "Account Manipulation",
+            "id": "T1098",
+            "name": "Account Manipulation",
             "tactic": "Privilege Escalation",
             "description": "공격자가 계정 또는 권한을 수정해 접근을 유지하거나 확대합니다.",
             "detection": "AttachUserPolicy, PutRolePolicy 등 IAM 쓰기 작업 모니터링.",
             "url": "https://attack.mitre.org/techniques/T1098/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Service: Cloud Service Modification"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Service: Cloud Service Modification"],
         },
         "T1136.003": {
-            "id": "T1136.003", "name": "Create Account: Cloud Account",
+            "id": "T1136.003",
+            "name": "Create Account: Cloud Account",
             "tactic": "Persistence",
             "description": "공격자가 클라우드 계정을 신규 생성해 지속성을 확보합니다.",
             "detection": "CreateUser, CreateRole API 모니터링.",
             "url": "https://attack.mitre.org/techniques/T1136/003/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Service: Cloud Service Modification"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Service: Cloud Service Modification"],
         },
         "T1580": {
-            "id": "T1580", "name": "Cloud Infrastructure Discovery",
+            "id": "T1580",
+            "name": "Cloud Infrastructure Discovery",
             "tactic": "Discovery",
             "description": "공격자가 클라우드 인프라 구성 요소를 열거합니다.",
             "detection": "DescribeInstances, DescribeVpcs 등 Describe* API 모니터링.",
             "url": "https://attack.mitre.org/techniques/T1580/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Service: Cloud Service Enumeration"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Service: Cloud Service Enumeration"],
         },
         "T1619": {
-            "id": "T1619", "name": "Cloud Storage Object Discovery",
+            "id": "T1619",
+            "name": "Cloud Storage Object Discovery",
             "tactic": "Discovery",
             "description": "공격자가 클라우드 스토리지 버킷/객체를 열거합니다.",
             "detection": "ListBuckets, GetBucketPolicy 등 S3 탐색 API 모니터링.",
             "url": "https://attack.mitre.org/techniques/T1619/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Storage: Cloud Storage Enumeration"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Storage: Cloud Storage Enumeration"],
         },
         "T1530": {
-            "id": "T1530", "name": "Data from Cloud Storage Object",
+            "id": "T1530",
+            "name": "Data from Cloud Storage Object",
             "tactic": "Collection",
             "description": "공격자가 클라우드 스토리지에서 데이터를 수집합니다.",
             "detection": "GetObject, SelectObjectContent 등 S3 읽기 API 모니터링.",
             "url": "https://attack.mitre.org/techniques/T1530/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Storage: Cloud Storage Access"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Storage: Cloud Storage Access"],
         },
         "T1537": {
-            "id": "T1537", "name": "Transfer Data to Cloud Account",
+            "id": "T1537",
+            "name": "Transfer Data to Cloud Account",
             "tactic": "Exfiltration",
             "description": "공격자가 데이터를 외부 클라우드 계정으로 전송합니다.",
             "detection": "PutObject, 교차 계정 복사 API 모니터링.",
             "url": "https://attack.mitre.org/techniques/T1537/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Storage: Cloud Storage Modification"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Storage: Cloud Storage Modification"],
         },
         "T1526": {
-            "id": "T1526", "name": "Cloud Service Discovery",
+            "id": "T1526",
+            "name": "Cloud Service Discovery",
             "tactic": "Discovery",
             "description": "공격자가 사용 가능한 클라우드 서비스 목록을 수집합니다.",
             "detection": "ListSecrets, ListFunctions 등 List* API 모니터링.",
             "url": "https://attack.mitre.org/techniques/T1526/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Service: Cloud Service Enumeration"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Service: Cloud Service Enumeration"],
         },
         "T1555.006": {
             "id": "T1555.006",
@@ -252,30 +285,37 @@ def _static_fallback() -> dict[str, dict[str, Any]]:
             "description": "공격자가 클라우드 시크릿 관리 서비스에서 자격증명을 탈취합니다.",
             "detection": "GetSecretValue, GetParameter 등 비밀 조회 API 모니터링. 비정상 주체나 시간대의 호출에 경보 설정.",
             "url": "https://attack.mitre.org/techniques/T1555/006/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Service: Cloud Service Enumeration"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Service: Cloud Service Enumeration"],
         },
         "T1552.001": {
-            "id": "T1552.001", "name": "Unsecured Credentials: Credentials In Files",
+            "id": "T1552.001",
+            "name": "Unsecured Credentials: Credentials In Files",
             "tactic": "Credential Access",
             "description": "공격자가 파일 또는 설정에서 평문 자격증명을 획득합니다.",
             "detection": "SSM GetParameter, S3 GetObject 등 설정 조회 API 모니터링.",
             "url": "https://attack.mitre.org/techniques/T1552/001/",
-            "platforms": ["IaaS"], "data_sources": ["File: File Access"],
+            "platforms": ["IaaS"],
+            "data_sources": ["File: File Access"],
         },
         "T1562.008": {
-            "id": "T1562.008", "name": "Impair Defenses: Disable Cloud Logs",
+            "id": "T1562.008",
+            "name": "Impair Defenses: Disable Cloud Logs",
             "tactic": "Defense Evasion",
             "description": "공격자가 CloudTrail 등 로깅을 비활성화해 탐지를 방해합니다.",
             "detection": "StopLogging, DeleteTrail API 모니터링. 로그 중단 알람 설정.",
             "url": "https://attack.mitre.org/techniques/T1562/008/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Service: Cloud Service Modification"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Service: Cloud Service Modification"],
         },
         "T1562": {
-            "id": "T1562", "name": "Impair Defenses",
+            "id": "T1562",
+            "name": "Impair Defenses",
             "tactic": "Defense Evasion",
             "description": "공격자가 보안 도구나 로깅을 비활성화합니다.",
             "detection": "보안 설정 변경 API 모니터링.",
             "url": "https://attack.mitre.org/techniques/T1562/",
-            "platforms": ["IaaS"], "data_sources": ["Cloud Service: Cloud Service Modification"],
+            "platforms": ["IaaS"],
+            "data_sources": ["Cloud Service: Cloud Service Modification"],
         },
     }
