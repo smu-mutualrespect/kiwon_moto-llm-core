@@ -559,7 +559,9 @@ def create_llm_fallback_app() -> Flask:
                         for e in _al.get(sid, [])
                     ],
                     "risk_score": _ss.get(sid, {}).get("risk_score"),
-                    "idle_sec": round(_time.time() - _la[sid], 1) if sid in _la else None,
+                    "idle_sec": round(_time.time() - _la[sid], 1)
+                    if sid in _la
+                    else None,
                     "reported": sid in _rs,
                 }
             return Response(
@@ -577,7 +579,9 @@ def create_llm_fallback_app() -> Flask:
         from werkzeug.serving import make_server as _make_server
 
         srv = _make_server("127.0.0.1", 5556, debug_app)
-        _threading.Thread(target=srv.serve_forever, daemon=True, name="moto-debug-server").start()
+        _threading.Thread(
+            target=srv.serve_forever, daemon=True, name="moto-debug-server"
+        ).start()
 
     _start_debug_server()
     # ─────────────────────────────────────────────────────────────────────
