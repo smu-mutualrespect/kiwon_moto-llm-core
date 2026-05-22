@@ -160,12 +160,22 @@ def generate_navigator_layer(
     }
 
 
+_watcher_started = False
+_watcher_lock = threading.Lock()
+
+
 def start_report_watcher(idle_seconds: float = _IDLE_SECONDS) -> None:
     """비활성 세션에 대해 자동으로 보고서를 생성하는 백그라운드 데몬 스레드를 시작합니다.
 
     idle_seconds(기본 300초 / 5분) 동안 요청이 없으면 세션 종료로 판단합니다.
     MOTO_HONEYPOT_SESSION_TIMEOUT 환경변수로 조정 가능합니다.
+    중복 호출에 안전합니다 — 스레드는 최초 1회만 시작됩니다.
     """
+    global _watcher_started
+    with _watcher_lock:
+        if _watcher_started:
+            return
+        _watcher_started = True
 
     def _watch() -> None:
         while True:
@@ -204,8 +214,9 @@ def _compute_timing_analysis(action_log: list[dict[str, Any]]) -> dict[str, Any]
     avg = sum(intervals) / len(intervals)
     deviation = (sum((x - avg) ** 2 for x in intervals) / len(intervals)) ** 0.5
     total_sec = (timestamps[-1] - timestamps[0]).total_seconds()
-    # 평균 간격 10초 이하 또는 편차가 매우 작으면 자동화 의심
-    is_automated = avg <= 10.0 or deviation < 2.0
+    # 평균 간격 10초 이하이거나, 충분한 샘플(5개 이상 간격)에서 편차가 매우 작으면 자동화 의심
+    # 2개짜리 세션은 interval이 1개뿐이라 deviation=0 → 오탐 방지를 위해 샘플 수 조건 추가
+    is_automated = avg <= 10.0 or (len(intervals) >= 5 and deviation < 2.0)
     return {
         "avg_interval_sec": round(avg, 1),
         "min_interval_sec": round(min(intervals), 1),
@@ -226,7 +237,9 @@ def _extract_iocs(
     iocs: dict[str, Any] = {}
 
     # 자격증명 식별자
-    if session_id.startswith(("AKIA", "ASIA", "AROA")):
+    # AKIA = 장기 IAM User Key, ASIA = 임시 STS 세션 토큰
+    # AROA는 Role Principal ID (ARN 내부 식별자)이므로 자격증명으로 분류하지 않음
+    if session_id.startswith(("AKIA", "ASIA")):
         iocs["access_key_id"] = session_id
         iocs["credential_type"] = (
             "장기 자격증명 (IAM User Key)"

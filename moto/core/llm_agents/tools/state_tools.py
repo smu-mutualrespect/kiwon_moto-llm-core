@@ -308,9 +308,11 @@ def record_native_interaction_tool(
         next_state["last_actions"] = last_actions[-10:]
 
         exposed_assets = list(next_state.get("exposed_assets", []))
+        newly_found: list[str] = []
         for asset in _extract_assets_from_response(response_body):
             if asset not in exposed_assets:
                 exposed_assets.append(asset)
+                newly_found.append(asset)
         next_state["exposed_assets"] = exposed_assets[-50:]
 
         # native 응답에서도 이름 필드 추출 → 에이전트 응답과 이름 일관성 유지
@@ -341,6 +343,7 @@ def record_native_interaction_tool(
         float(next_state.get("risk_score", 0.2)),
         source="moto_native",
         status_code=status_code,
+        new_assets=newly_found or [],
     )
 
 
@@ -373,10 +376,10 @@ _CACHE_OPERATION_PREFIXES = (
     "get",
     "describe",
     "list",
-    "batch",
     "query",
     "head",
     "scan",
+    # "batch" 제외 — BatchWriteItem/BatchDeleteItem 등 쓰기 연산이 포함되어 캐시 오분류 발생
 )
 
 
