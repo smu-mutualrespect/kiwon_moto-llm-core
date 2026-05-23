@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -88,6 +89,12 @@ def generate_attack_report(session_id: str) -> str:
     ttp_map = _map_ttps(action_log)
 
     prompt = _build_report_prompt(session_id, state, action_log, timing, iocs, ttp_map)
+    print(  # noqa: T201
+        f"[PhantomGate] 보고서 생성 중 — session={session_id[:16]} | "
+        f"actions={len(action_log)} | ttps={len(ttp_map)}",
+        file=sys.stderr,
+        flush=True,
+    )
     report_md, llm_meta = call_gpt_api_with_meta(
         prompt,
         model=_REPORT_MODEL,
@@ -150,7 +157,12 @@ def generate_attack_report(session_id: str) -> str:
         encoding="utf-8",
     )
 
-    mark_session_reported(session_id)
+    mark_session_reported(session_id, report_path=str(md_path))
+    print(  # noqa: T201
+        f"[PhantomGate] 보고서 저장 완료 — session={session_id[:16]} | path={md_path}",
+        file=sys.stderr,
+        flush=True,
+    )
     return str(md_path)
 
 
@@ -216,6 +228,12 @@ def start_report_watcher(idle_seconds: float = _IDLE_SECONDS) -> None:
             time.sleep(60)
             for sid in get_idle_sessions(idle_seconds):
                 try:
+                    print(  # noqa: T201
+                        f"[PhantomGate] 세션 종료 감지 — session={sid[:16]} "
+                        f"({idle_seconds:.0f}초 비활성) | 보고서 생성 시작",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                     generate_attack_report(sid)
                 except Exception:
                     _log.exception("보고서 생성 실패 — session_id=%s", sid)
@@ -293,10 +311,7 @@ def _extract_iocs(
 
     # 관찰된 전체 작업 순서 (중복 제거)
     iocs["observed_operations"] = list(
-        dict.fromkeys(
-            f"{e['service']}:{e['operation']}"
-            for e in action_log
-        )
+        dict.fromkeys(f"{e['service']}:{e['operation']}" for e in action_log)
     )
 
     # 발견한 자산 ARN

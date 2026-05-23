@@ -188,19 +188,24 @@ def _start_debug_server() -> None:
     import threading as _threading
     import time as _time
 
-    from moto.core.llm_agents.tools.report_tools import generate_attack_report
+    from moto.core.llm_agents.tools.report_tools import (
+        generate_attack_report,
+        start_report_watcher,
+    )
     from moto.core.llm_agents.tools.state_tools import _action_log as _al
     from moto.core.llm_agents.tools.state_tools import _last_activity as _la
-    from moto.core.llm_agents.tools.state_tools import _reported_sessions as _rs
     from moto.core.llm_agents.tools.state_tools import _session_state as _ss
+    from moto.core.llm_agents.tools.state_tools import _session_summary as _sc
 
     debug_app = Flask("moto_debug")
 
-    @debug_app.route("/sessions")
-    def sessions() -> Response:
+    @debug_app.route("/sessions")  # type: ignore[misc,untyped-decorator]
+    def sessions() -> Response:  # type: ignore[misc]
         result = {}
+        # 활성 세션
         for sid in set(list(_al.keys()) + list(_ss.keys())):
             result[sid] = {
+                "status": "active",
                 "action_count": len(_al.get(sid, [])),
                 "actions": [
                     f"{e['service']}:{e['operation']} [{e['source']}]"
@@ -208,15 +213,21 @@ def _start_debug_server() -> None:
                 ],
                 "risk_score": _ss.get(sid, {}).get("risk_score"),
                 "idle_sec": round(_time.time() - _la[sid], 1) if sid in _la else None,
-                "reported": sid in _rs,
             }
+        # 보고 완료 세션 (메모리에서 해제됐지만 요약은 보존)
+        for sid, summary in _sc.items():
+            if sid not in result:
+                result[sid] = {
+                    "status": "reported",
+                    **summary,
+                }
         return Response(
             _json.dumps(result, ensure_ascii=False, indent=2),
             content_type="application/json",
         )
 
-    @debug_app.route("/report/<session_id>", methods=["POST"])
-    def trigger_report(session_id: str) -> Response:
+    @debug_app.route("/report/<session_id>", methods=["POST"])  # type: ignore[misc,untyped-decorator]
+    def trigger_report(session_id: str) -> Response:  # type: ignore[misc]
         path = generate_attack_report(session_id)
         return Response(_json.dumps({"path": path}), content_type="application/json")
 
@@ -226,6 +237,7 @@ def _start_debug_server() -> None:
     _threading.Thread(
         target=srv.serve_forever, daemon=True, name="moto-debug-server"
     ).start()
+    start_report_watcher()
 
 
 class DomainDispatcherApplication:
@@ -574,10 +586,10 @@ def create_llm_fallback_app() -> Flask:
     start_report_watcher()
 
     # 루트 path 요청도 fallback agent로 들어오게 한다.
-    @fallback_app.route("/", defaults={"path": ""}, methods=HTTP_METHODS)
+    @fallback_app.route("/", defaults={"path": ""}, methods=HTTP_METHODS)  # type: ignore[misc,untyped-decorator]
     # 임의 path 요청도 fallback agent로 들어오게 한다.
-    @fallback_app.route("/<path:path>", methods=HTTP_METHODS)
-    def llm_fallback(path: str) -> Response:
+    @fallback_app.route("/<path:path>", methods=HTTP_METHODS)  # type: ignore[misc,untyped-decorator]
+    def llm_fallback(path: str) -> Response:  # type: ignore[misc]
         # Flask request body를 bytes로 읽어 Query/JSON protocol 파라미터 추론에 쓴다.
         body = request.get_data(cache=True)
         # 원본 AWS CLI 헤더를 dict로 바꿔 fallback normalizer와 audit에 넘긴다.

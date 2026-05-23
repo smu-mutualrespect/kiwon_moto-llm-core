@@ -17,6 +17,7 @@ _lock = threading.RLock()
 _action_log: dict[str, list[dict[str, Any]]] = {}
 _last_activity: dict[str, float] = {}
 _reported_sessions: set[str] = set()
+_session_summary: dict[str, dict[str, Any]] = {}  # 보고 완료 세션의 요약 정보
 
 
 def _append_action_log(
@@ -733,10 +734,19 @@ def get_idle_sessions(idle_seconds: float) -> list[str]:
         ]
 
 
-def mark_session_reported(session_id: str) -> None:
+def mark_session_reported(session_id: str, report_path: str = "") -> None:
     """세션을 보고 완료로 표시하고 메모리에서 세션 데이터를 해제합니다."""
     with _lock:
         _reported_sessions.add(session_id)
+        log = _action_log.get(session_id, [])
+        state = _session_state.get(session_id, {})
+        _session_summary[session_id] = {
+            "action_count": len(log),
+            "risk_score": state.get("risk_score"),
+            "services": sorted({e["service"] for e in log}),
+            "reported_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "report_path": report_path,
+        }
         _action_log.pop(session_id, None)
         _session_state.pop(session_id, None)
         _last_activity.pop(session_id, None)
