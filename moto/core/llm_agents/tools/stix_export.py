@@ -265,34 +265,6 @@ def _build_indicators(
             }
         )
 
-    # 행위 기반 지표 — 고위험 operation 시퀀스
-    high_risk_ops = iocs.get("high_risk_operations", [])
-    if len(high_risk_ops) >= 2:
-        seq_str = " → ".join(high_risk_ops[:4])
-        ind_id = f"indicator--{_det_uuid('indicator-behavior', session_id)}"
-        indicators.append(
-            {
-                "type": "indicator",
-                "spec_version": "2.1",
-                "id": ind_id,
-                "created": now_ts,
-                "modified": now_ts,
-                "created_by_ref": _PHANTOMGATE_IDENTITY_ID,
-                "name": "클라우드 정찰 → 민감 자산 접근 행위 패턴",
-                "description": f"관찰된 고위험 작업 시퀀스: {seq_str}",
-                "indicator_types": ["malicious-activity", "anomalous-activity"],
-                "pattern": (
-                    "[network-traffic:dst_ref.type = 'domain-name' "
-                    "AND network-traffic:dst_ref.value MATCHES 'amazonaws\\\\.com']"
-                ),
-                "pattern_type": "stix",
-                "valid_from": now_ts,
-                "confidence": 75,
-                "labels": ["behavioral-ioc", "cloud-attack-chain"],
-                "x_phantomgate_operations": high_risk_ops,
-            }
-        )
-
     # 자동화 도구 징후 지표
     if iocs.get("automation_indicator"):
         ind_id = f"indicator--{_det_uuid('indicator-automation', session_id)}"

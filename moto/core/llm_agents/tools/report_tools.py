@@ -31,36 +31,6 @@ _REPORT_MAX_TOKENS = int(os.getenv("MOTO_LLM_REPORT_MAX_TOKENS", "5000"))
 # TLP(Traffic Light Protocol) 등급 — 조직 설정에 따라 변경
 _TLP_LEVEL = os.getenv("MOTO_HONEYPOT_TLP", "TLP:AMBER")
 
-# STIX behavioral indicator 생성 기준 — 실질적 피해로 이어지는 고위험 오퍼레이션
-_HIGH_RISK_OPS: frozenset[str] = frozenset(
-    {
-        "secretsmanager:GetSecretValue",
-        "secretsmanager:ListSecrets",
-        "ssm:GetParameter",
-        "ssm:GetParameters",
-        "ssm:GetParametersByPath",
-        "iam:CreateAccessKey",
-        "iam:CreateUser",
-        "iam:AttachUserPolicy",
-        "iam:AttachRolePolicy",
-        "iam:PutUserPolicy",
-        "iam:PutRolePolicy",
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "kms:Decrypt",
-        "kms:GenerateDataKey",
-        "sts:AssumeRole",
-        "ec2:RunInstances",
-        "cloudtrail:StopLogging",
-        "cloudtrail:DeleteTrail",
-        "guardduty:DeleteDetector",
-        "guardduty:DisassociateFromMasterAccount",
-        "lambda:InvokeFunction",
-        "iam:DeleteAccessKey",
-    }
-)
-
 # 작업(operation) → MITRE ATT&CK 기법 ID 정적 매핑
 # ref: https://attack.mitre.org/matrices/enterprise/cloud/
 _OP_TO_TECHNIQUE: dict[tuple[str, str], str] = {
@@ -361,16 +331,6 @@ def _extract_iocs(
         iocs["attack_duration"] = (
             f"{timing['total_duration_sec']}초 ({round(timing['total_duration_sec'] / 60, 1)}분)"
         )
-
-    # STIX behavioral indicator용 고위험 오퍼레이션 목록 (순서 유지 + 중복 제거)
-    seen_ops: set[str] = set()
-    high_risk: list[str] = []
-    for e in action_log:
-        op = f"{e['service']}:{e['operation']}"
-        if op in _HIGH_RISK_OPS and op not in seen_ops:
-            seen_ops.add(op)
-            high_risk.append(op)
-    iocs["high_risk_operations"] = high_risk
 
     return iocs
 
