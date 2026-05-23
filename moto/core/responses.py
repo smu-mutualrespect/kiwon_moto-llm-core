@@ -906,10 +906,7 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                         source="responses.call_action.native_validation",
                         moto_native_body=body if _agent_modified_fallback else None,
                     )
-                    # agent가 이미 [agent] 로 기록했으므로 native 이중 기록은 생략.
-                    # 단, agent_modified_fallback(이전 agent 리소스 일관성 유지)은 예외적으로 기록.
-                    if _agent_modified_fallback:
-                        self._record_native_history_if_enabled(status, body)
+                    # handle_aws_request가 [agent]로 이미 기록했으므로 native 중복 기록 생략.
                     return 200, headers, fallback_text
                 except Exception:
                     pass  # fallback도 실패하면 원본 Moto 응답 유지
