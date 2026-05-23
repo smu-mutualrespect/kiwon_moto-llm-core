@@ -260,12 +260,11 @@ def _extract_iocs(
     # 탐색한 서비스 목록
     iocs["targeted_services"] = sorted({e["service"] for e in action_log})
 
-    # 고위험 작업 (risk_score >= 0.6)
-    iocs["high_risk_operations"] = list(
+    # 관찰된 전체 작업 순서 (중복 제거)
+    iocs["observed_operations"] = list(
         dict.fromkeys(
             f"{e['service']}:{e['operation']}"
             for e in action_log
-            if float(e.get("risk_score", 0)) >= 0.6
         )
     )
 
@@ -344,27 +343,25 @@ def _build_report_prompt(
     ttp_map: dict[str, dict[str, Any]],
 ) -> str:
     start_time = state.get("session_start_time", "unknown")
-    risk_score = float(state.get("risk_score", 0.0))
     account_id = state.get("consistency_locks", {}).get("account_id", "unknown")
 
     total_ops = len(action_log)
     services_used = sorted({e["service"] for e in action_log})
     phases_seen = list(dict.fromkeys(e["phase"] for e in action_log))
 
-    # 타임라인 (증거 연결)
+    # 타임라인 (증거 연결 — 점수 제외)
     timeline_lines: list[str] = []
     for i, entry in enumerate(action_log, 1):
         assets = entry.get("new_assets", [])
         line = (
             f"[{i:02d}] {entry['timestamp']} | [{entry['phase']}] "
-            f"{entry['service']}:{entry['operation']} | "
-            f"출처={entry['source']} | risk={entry.get('risk_score', 0):.2f}"
+            f"{entry['service']}:{entry['operation']} | 출처={entry['source']}"
         )
         if assets:
             line += f" | 발견자산={', '.join(str(a) for a in assets[:2])}"
         timeline_lines.append(line)
 
-    # TTP 사전 매핑 블록 (LLM 참고용 — detection guidance 포함)
+    # TTP 사전 매핑 블록 (탐지 가이드 포함)
     ttp_lines: list[str] = []
     for tech_id, info in ttp_map.items():
         evidence_str = " / ".join(info["evidence"][:3])
@@ -378,29 +375,29 @@ def _build_report_prompt(
     # IOC 블록
     ioc_lines = [f"- {k}: {v}" for k, v in iocs.items()]
 
-    # 자동화 분석
+    # 타이밍 분석
     auto_note = ""
     if timing:
         auto_note = (
             f"평균 요청 간격: {timing.get('avg_interval_sec')}초, "
             f"표준편차: {timing.get('std_deviation_sec')}초, "
-            f"전체 공격 지속: {timing.get('total_duration_sec')}초, "
+            f"전체 세션 지속: {timing.get('total_duration_sec')}초, "
             f"자동화 의심: {'예' if timing.get('is_automated') else '아니오'}"
         )
 
-    return f"""당신은 AWS 클라우드 허니팟 공격 세션을 분석하는 위협 인텔리전스 분석가입니다.
-아래의 모든 데이터를 바탕으로 실제 침해사고 대응(IR) 보고서 형식에 맞는 완전한 Markdown 보고서를 **한국어**로 작성하세요.
+    return f"""당신은 AWS 클라우드 허니팟에서 수집된 공격 세션을 분석하는 위협 인텔리전스 분석가입니다.
+이 보고서의 목적은 "공격자가 AWS 환경에서 어떤 흐름으로 움직이는가"를 기록하는 것입니다.
+점수나 피해 평가 없이, 관찰된 행동 순서와 TTP를 중심으로 **한국어**로 작성하세요.
 
-══════════════ 분석 데이터 ══════════════
+══════════════ 관찰 데이터 ══════════════
 
 [세션 정보]
 - 세션 ID: {session_id}
-- 대상 계정 (가상): {account_id}
+- 허니팟 계정 ID (가상): {account_id}
 - 세션 시작: {start_time}
 - 총 API 호출 수: {total_ops}
-- 탐색 서비스: {", ".join(services_used)}
-- 공격 단계 흐름: {" → ".join(phases_seen)}
-- 최종 위험 점수: {risk_score:.2f} / 1.00
+- 탐색한 서비스: {", ".join(services_used)}
+- 관찰된 공격 단계 흐름: {" → ".join(phases_seen)}
 
 [요청 타이밍 분석]
 {auto_note or "데이터 없음"}
@@ -408,69 +405,62 @@ def _build_report_prompt(
 [전체 공격 타임라인 (증거 번호 포함)]
 {chr(10).join(timeline_lines)}
 
-[사전 TTP 매핑 (참고용 — 아래 보고서에서 Procedure/Evidence 보강 필요)]
+[TTP 매핑]
 {chr(10).join(ttp_lines) or "매핑 없음"}
 
-[침해지표 (IOC)]
+[공격자 식별 지표 (IOC)]
 {chr(10).join(ioc_lines)}
 
 ══════════════ 보고서 형식 ══════════════
 
 아래 구조를 **반드시** 따르세요. 각 섹션에서 위 데이터의 실제 증거 번호([01], [02] 등)를 인용하세요.
+점수, 위험도 수치, 피해 평가는 절대 포함하지 마세요.
 
 ---
 
-# 침해사고 분석 보고서
+# AWS 허니팟 공격 흐름 분석 보고서
 
 **문서 등급**: {_TLP_LEVEL}
 **작성일**: {datetime.now(timezone.utc).strftime("%Y년 %m월 %d일")}
-**대상 세션**: {session_id[:16]}
+**세션**: {session_id[:16]}
 
 ---
 
-## 1. 개요 (Executive Summary)
-(경영진/비기술자 대상 — 3문장 이내. 언제, 누가, 무엇을, 어떤 영향인지)
+## 1. 세션 요약
 
-## 2. 사고 개요
 | 항목 | 내용 |
 |------|------|
-| 사고 유형 | |
-| 공격 벡터 | |
-| 최초 탐지 시각 | |
-| 공격 지속 시간 | |
-| 영향 받은 서비스 | |
-| 최종 위험도 | |
+| 공격자 식별자 | |
+| 자격증명 유형 | |
+| 세션 시작 시각 | |
+| 세션 지속 시간 | |
+| 탐색한 서비스 수 | |
+| 총 API 호출 수 | |
+| 자동화 도구 사용 여부 | |
 
-## 3. 공격 흐름 분석 (Attack Chain)
-(단계별 서술 — Kill Chain 또는 ATT&CK 전술 순서로. 각 단계마다 증거 번호 인용)
+## 2. 공격 흐름 분석
 
-## 4. MITRE ATT&CK TTP 매핑
+(허니팟에서 관찰된 공격자의 행동을 단계별로 서술하세요.
+각 단계가 왜 수행됐는지, 다음 단계로 어떻게 이어지는지 흐름 중심으로 작성합니다.
+증거 번호([01], [02] 등)를 각 단계마다 인용하세요.)
 
-| 전술 | 기법 ID | 기법 이름 | Procedure (공격자가 구체적으로 한 행위) | 증거 | 신뢰도 |
-|------|--------|----------|--------------------------------------|------|--------|
-(위 사전 매핑을 기반으로 Procedure를 구체적으로 서술. 증거 칸에는 타임라인 번호 인용)
+## 3. MITRE ATT&CK TTP 매핑
 
-## 5. 침해지표 (IOC)
+| 전술 | 기법 ID | 기법 이름 | 공격자가 한 행위 | 증거 | 신뢰도 |
+|------|--------|----------|----------------|------|--------|
+(TTP 매핑 데이터를 기반으로 작성. Procedure는 이번 세션에서 구체적으로 관찰된 행위로 서술)
 
-### 5-1. 자격증명 지표
-### 5-2. 행위 기반 지표 (Behavioral IOC)
-### 5-3. 자산 기반 지표 (Asset IOC)
+## 4. 공격자 식별 지표 (IOC)
 
-## 6. 영향 평가
-### 기밀성 (Confidentiality)
-### 무결성 (Integrity)
-### 가용성 (Availability)
+### 4-1. 자격증명 지표
+### 4-2. 탐색한 자산 목록
+### 4-3. 행위 패턴 지표
 
-## 7. 위험도 평가
-**전체 심각도**: 심각 / 높음 / 중간 / 낮음
-(판단 근거를 구체적 증거와 함께 서술)
+## 5. 탐지 권고
 
-## 8. 대응 조치 권고
-### 즉각 조치 (24시간 이내)
-### 단기 조치 (1주일 이내)
-### 중장기 조치 (1개월 이내)
-
-## 9. 재발 방지 및 교훈 (Lessons Learned)
+(이 공격 패턴이 실제 AWS 환경에서 발생했을 때 어떻게 탐지할 수 있는지 서술하세요.
+CloudTrail, GuardDuty 등 AWS 네이티브 탐지 수단을 중심으로 작성합니다.
+각 권고는 위 TTP 또는 타임라인 증거와 연결해서 서술하세요.)
 
 ---
 *본 보고서는 PhantomGate 허니팟 시스템에 의해 자동 생성되었습니다.*
