@@ -88,7 +88,7 @@ def generate_attack_report(session_id: str) -> str:
     ttp_map = _map_ttps(action_log)
 
     prompt = _build_report_prompt(session_id, state, action_log, timing, iocs, ttp_map)
-    report_md, _ = call_gpt_api_with_meta(
+    report_md, llm_meta = call_gpt_api_with_meta(
         prompt,
         model=_REPORT_MODEL,
         timeout=120.0,
@@ -101,6 +101,37 @@ def generate_attack_report(session_id: str) -> str:
 
     md_path = _REPORT_DIR / f"{base}.md"
     md_path.write_text(report_md, encoding="utf-8")
+
+    # 보고서 생성 메트릭 로그
+    usage = llm_meta.get("usage") or {}
+    _log.info(
+        "보고서 생성 완료 | session=%s | model=%s | "
+        "input_tokens=%s | output_tokens=%s | duration_ms=%s | path=%s",
+        session_id[:16],
+        llm_meta.get("model"),
+        usage.get("input_tokens"),
+        usage.get("output_tokens"),
+        llm_meta.get("duration_ms"),
+        md_path,
+    )
+
+    # 메트릭 파일 저장 (측정용)
+    metrics_path = _REPORT_DIR / f"{base}.metrics.json"
+    metrics_path.write_text(
+        json.dumps(
+            {
+                "session_id": session_id[:16],
+                "model": llm_meta.get("model"),
+                "prompt_chars": len(prompt),
+                "output_chars": len(report_md),
+                "usage": usage,
+                "duration_ms": llm_meta.get("duration_ms"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     # ATT&CK Navigator 레이어 JSON
     navigator_path = _REPORT_DIR / f"{base}_navigator.json"
@@ -461,6 +492,26 @@ def _build_report_prompt(
 (이 공격 패턴이 실제 AWS 환경에서 발생했을 때 어떻게 탐지할 수 있는지 서술하세요.
 CloudTrail, GuardDuty 등 AWS 네이티브 탐지 수단을 중심으로 작성합니다.
 각 권고는 위 TTP 또는 타임라인 증거와 연결해서 서술하세요.)
+
+## 6. 결론 및 보안 대책 권고
+
+### 공격자 특징 요약
+(이 세션에서 관찰된 공격자의 특징을 서술하세요 — 자격증명 유형, 탐색 범위, 행동 패턴, 자동화 여부 등)
+
+### 실제 환경이었다면
+(허니팟이 아니라 실제 AWS 운영 환경이었을 경우를 가정하여, 이 공격 흐름이 어떤 결과로 이어질 수 있었는지 서술하세요.)
+
+### 보안 대책 권고
+(위 공격 패턴을 방어하기 위한 AWS 보안 설정 및 정책을 구체적으로 권고하세요.
+각 권고마다 근거가 되는 공식 레퍼런스를 아래 형식으로 반드시 포함하세요:
+> 참고: [문서명](URL) — 한 줄 설명)
+
+반드시 포함할 레퍼런스 출처:
+- AWS 공식 보안 문서 (docs.aws.amazon.com/security)
+- AWS Well-Architected Framework Security Pillar
+- CIS AWS Foundations Benchmark
+- NIST SP 800-53 또는 CSF
+- MITRE ATT&CK for Cloud (attack.mitre.org)
 
 ---
 *본 보고서는 PhantomGate 허니팟 시스템에 의해 자동 생성되었습니다.*
