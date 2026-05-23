@@ -190,6 +190,13 @@ class S3Response(BaseResponse):
         # Taking the naive approach to never decompress anything from S3 for now
         self.allow_request_decompression = False
 
+    def _get_action(self) -> str:
+        # S3는 querystring이 아닌 self.data["Action"]에 액션명을 저장하므로 우선 확인
+        action = self.data.get("Action")
+        if action:
+            return action
+        return super()._get_action()
+
     def setup_class(self, request: Any, full_url: str, headers: Any) -> None:  # type: ignore[override]
         super().setup_class(request, full_url, headers, use_raw_body=True)
         self.region = parse_region_from_url(full_url, use_default_region=False)
@@ -391,7 +398,9 @@ class S3Response(BaseResponse):
         except ServiceException as e:
             response = self.serialized(ActionResult(e))
 
-        return self._send_response(response)
+        status_code, resp_headers, body = self._send_response(response)
+        self._record_native_history_if_enabled(status_code, body)
+        return status_code, resp_headers, body
 
     @classmethod
     def _send_response(
@@ -1861,6 +1870,7 @@ class S3Response(BaseResponse):
             response = s3error.code, {}, s3error.description
 
         status_code, response_headers, response_content = self._send_response(response)
+        self._record_native_history_if_enabled(status_code, response_content)
 
         if (
             status_code == 200
