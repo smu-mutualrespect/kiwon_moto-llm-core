@@ -123,7 +123,7 @@ _OP_TO_TECHNIQUE: dict[tuple[str, str], str] = {
     ("kms", "CreateKey"): "T1098",
     ("kms", "DisableKey"): "T1562",
     ("kms", "ScheduleKeyDeletion"): "T1485",
-    # ── Lambda ──
+    # ── Lambda (moto internally uses "awslambda" as the service name) ──
     ("lambda", "ListFunctions"): "T1526",
     ("lambda", "GetFunction"): "T1526",
     ("lambda", "GetFunctionConfiguration"): "T1526",
@@ -131,6 +131,13 @@ _OP_TO_TECHNIQUE: dict[tuple[str, str], str] = {
     ("lambda", "UpdateFunctionCode"): "T1059.009",
     ("lambda", "InvokeFunction"): "T1059.009",
     ("lambda", "DeleteFunction"): "T1485",
+    ("awslambda", "ListFunctions"): "T1526",
+    ("awslambda", "GetFunction"): "T1526",
+    ("awslambda", "GetFunctionConfiguration"): "T1526",
+    ("awslambda", "CreateFunction"): "T1059.009",
+    ("awslambda", "UpdateFunctionCode"): "T1059.009",
+    ("awslambda", "InvokeFunction"): "T1059.009",
+    ("awslambda", "DeleteFunction"): "T1485",
     # ── EKS ──
     ("eks", "ListClusters"): "T1580",
     ("eks", "DescribeCluster"): "T1580",
