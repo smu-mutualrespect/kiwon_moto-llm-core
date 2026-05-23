@@ -34,41 +34,155 @@ _TLP_LEVEL = os.getenv("MOTO_HONEYPOT_TLP", "TLP:AMBER")
 # 작업(operation) → MITRE ATT&CK 기법 ID 정적 매핑
 # ref: https://attack.mitre.org/matrices/enterprise/cloud/
 _OP_TO_TECHNIQUE: dict[tuple[str, str], str] = {
+    # ── STS ──
     ("sts", "GetCallerIdentity"): "T1087.004",
+    ("sts", "AssumeRole"): "T1550.001",
+    ("sts", "AssumeRoleWithWebIdentity"): "T1550.001",
+    ("sts", "GetSessionToken"): "T1078.004",
+    # ── IAM — 열거 ──
+    ("iam", "GetUser"): "T1087.004",
     ("iam", "ListUsers"): "T1087.004",
+    ("iam", "ListAccessKeys"): "T1087.004",
     ("iam", "ListRoles"): "T1069.003",
+    ("iam", "ListGroups"): "T1069.003",
+    ("iam", "ListGroupsForUser"): "T1069.003",
     ("iam", "ListPolicies"): "T1069.003",
     ("iam", "GetPolicy"): "T1069.003",
     ("iam", "GetPolicyVersion"): "T1069.003",
     ("iam", "ListAttachedUserPolicies"): "T1069.003",
     ("iam", "ListAttachedRolePolicies"): "T1069.003",
+    ("iam", "SimulatePrincipalPolicy"): "T1069.003",
+    # ── IAM — 조작 / 지속성 ──
+    ("iam", "CreateUser"): "T1136.003",
+    ("iam", "CreateRole"): "T1136.003",
+    ("iam", "CreateAccessKey"): "T1098",
+    ("iam", "UpdateAccessKey"): "T1098",
+    ("iam", "DeleteAccessKey"): "T1098",
     ("iam", "AttachUserPolicy"): "T1098",
     ("iam", "AttachRolePolicy"): "T1098",
-    ("iam", "CreateUser"): "T1136.003",
-    ("iam", "CreateAccessKey"): "T1098",
+    ("iam", "DetachUserPolicy"): "T1098",
+    ("iam", "DetachRolePolicy"): "T1098",
     ("iam", "PutUserPolicy"): "T1098",
+    ("iam", "PutRolePolicy"): "T1098",
+    ("iam", "DeleteUserPolicy"): "T1098",
+    ("iam", "DeleteRolePolicy"): "T1098",
+    ("iam", "AddUserToGroup"): "T1098",
+    ("iam", "PassRole"): "T1098",
+    # ── EC2 — 열거 ──
     ("ec2", "DescribeInstances"): "T1580",
     ("ec2", "DescribeSecurityGroups"): "T1580",
     ("ec2", "DescribeVpcs"): "T1580",
     ("ec2", "DescribeSubnets"): "T1580",
+    ("ec2", "DescribeRegions"): "T1580",
+    ("ec2", "DescribeImages"): "T1580",
+    ("ec2", "DescribeKeyPairs"): "T1580",
+    ("ec2", "DescribeVolumes"): "T1580",
+    ("ec2", "DescribeSnapshots"): "T1580",
+    ("ec2", "DescribeNetworkInterfaces"): "T1580",
+    ("ec2", "DescribeRouteTables"): "T1580",
+    ("ec2", "DescribeInternetGateways"): "T1580",
+    # ── EC2 — 실행 / 조작 ──
+    ("ec2", "RunInstances"): "T1496",
+    ("ec2", "TerminateInstances"): "T1485",
+    ("ec2", "CreateSecurityGroup"): "T1098",
+    ("ec2", "AuthorizeSecurityGroupIngress"): "T1098",
+    ("ec2", "ModifyInstanceAttribute"): "T1578",
+    ("ec2", "CreateSnapshot"): "T1537",
+    # ── S3 ──
     ("s3", "ListBuckets"): "T1619",
+    ("s3", "ListObjects"): "T1619",
+    ("s3", "ListObjectsV2"): "T1619",
     ("s3", "GetBucketPolicy"): "T1619",
     ("s3", "GetBucketAcl"): "T1619",
+    ("s3", "GetBucketVersioning"): "T1619",
     ("s3", "GetObject"): "T1530",
     ("s3", "PutObject"): "T1537",
+    ("s3", "DeleteObject"): "T1485",
+    ("s3", "DeleteBucket"): "T1485",
+    ("s3", "PutBucketPolicy"): "T1098",
+    ("s3", "PutBucketVersioning"): "T1485",
+    # ── SecretsManager ──
     ("secretsmanager", "ListSecrets"): "T1526",
-    ("secretsmanager", "GetSecretValue"): "T1555.006",
     ("secretsmanager", "DescribeSecret"): "T1526",
+    ("secretsmanager", "GetSecretValue"): "T1555.006",
+    ("secretsmanager", "CreateSecret"): "T1098",
+    ("secretsmanager", "UpdateSecret"): "T1098",
+    ("secretsmanager", "PutSecretValue"): "T1098",
+    ("secretsmanager", "DeleteSecret"): "T1485",
+    # ── SSM ──
     ("ssm", "GetParameter"): "T1552.001",
     ("ssm", "GetParameters"): "T1552.001",
+    ("ssm", "GetParametersByPath"): "T1552.001",
+    ("ssm", "DescribeParameters"): "T1552.001",
+    ("ssm", "PutParameter"): "T1098",
+    # ── KMS ──
+    ("kms", "ListKeys"): "T1526",
+    ("kms", "DescribeKey"): "T1526",
+    ("kms", "Decrypt"): "T1552.004",
+    ("kms", "GenerateDataKey"): "T1552.004",
+    ("kms", "CreateKey"): "T1098",
+    ("kms", "DisableKey"): "T1562",
+    ("kms", "ScheduleKeyDeletion"): "T1485",
+    # ── Lambda ──
     ("lambda", "ListFunctions"): "T1526",
     ("lambda", "GetFunction"): "T1526",
+    ("lambda", "GetFunctionConfiguration"): "T1526",
+    ("lambda", "CreateFunction"): "T1059.009",
+    ("lambda", "UpdateFunctionCode"): "T1059.009",
+    ("lambda", "InvokeFunction"): "T1059.009",
+    ("lambda", "DeleteFunction"): "T1485",
+    # ── EKS ──
     ("eks", "ListClusters"): "T1580",
+    ("eks", "DescribeCluster"): "T1580",
+    ("eks", "ListNodegroups"): "T1580",
+    # ── RDS ──
     ("rds", "DescribeDBInstances"): "T1580",
+    ("rds", "DescribeDBSnapshots"): "T1580",
+    ("rds", "CreateDBSnapshot"): "T1537",
+    # ── CloudTrail ──
     ("cloudtrail", "DescribeTrails"): "T1580",
+    ("cloudtrail", "GetTrailStatus"): "T1580",
     ("cloudtrail", "StopLogging"): "T1562.008",
+    ("cloudtrail", "DeleteTrail"): "T1562.008",
+    ("cloudtrail", "UpdateTrail"): "T1562.008",
+    ("cloudtrail", "PutEventSelectors"): "T1562.008",
+    # ── GuardDuty ──
     ("guardduty", "ListDetectors"): "T1580",
+    ("guardduty", "ListFindings"): "T1526",
+    ("guardduty", "GetFindings"): "T1526",
     ("guardduty", "DeleteDetector"): "T1562",
+    ("guardduty", "DisassociateFromMasterAccount"): "T1562",
+    ("guardduty", "CreateIPSet"): "T1562",
+    # ── CloudWatch ──
+    ("cloudwatch", "DescribeAlarms"): "T1580",
+    ("cloudwatch", "DeleteAlarms"): "T1562",
+    ("cloudwatch", "PutMetricAlarm"): "T1580",
+    # ── Config ──
+    ("config", "DescribeConfigRules"): "T1580",
+    ("config", "DeleteConfigRule"): "T1562",
+    # ── Organizations ──
+    ("organizations", "ListAccounts"): "T1087.004",
+    ("organizations", "DescribeOrganization"): "T1087.004",
+    # ── ECR ──
+    ("ecr", "GetAuthorizationToken"): "T1078.004",
+    ("ecr", "DescribeRepositories"): "T1526",
+    ("ecr", "ListImages"): "T1526",
+    ("ecr", "BatchGetImage"): "T1530",
+    # ── Route53 ──
+    ("route53", "ListHostedZones"): "T1526",
+    ("route53", "ListResourceRecordSets"): "T1526",
+    ("route53", "ChangeResourceRecordSets"): "T1098",
+    # ── DynamoDB ──
+    ("dynamodb", "ListTables"): "T1526",
+    ("dynamodb", "DescribeTable"): "T1526",
+    ("dynamodb", "Scan"): "T1530",
+    ("dynamodb", "GetItem"): "T1530",
+    # ── SNS / SQS ──
+    ("sns", "ListTopics"): "T1526",
+    ("sns", "Publish"): "T1059.009",
+    ("sqs", "ListQueues"): "T1526",
+    ("sqs", "ReceiveMessage"): "T1530",
+    ("sqs", "SendMessage"): "T1059.009",
 }
 
 
@@ -435,6 +549,11 @@ def _build_report_prompt(
 이 보고서의 목적은 "공격자가 AWS 환경에서 어떤 흐름으로 움직이는가"를 기록하는 것입니다.
 점수나 피해 평가 없이, 관찰된 행동 순서와 TTP를 중심으로 **한국어**로 작성하세요.
 
+**[절대 규칙] TTP 작성 제한**
+- 아래 [TTP 매핑] 섹션에 제공된 기법 ID만 사용하세요.
+- 제공되지 않은 기법 ID(예: T1234, T1234.001 등)를 추론하거나 추가하지 마세요.
+- TTP 표는 제공된 매핑 데이터만으로 채우고, 매핑이 없는 작업은 TTP 표에 포함하지 마세요.
+
 ══════════════ 관찰 데이터 ══════════════
 
 [세션 정보]
@@ -494,7 +613,8 @@ def _build_report_prompt(
 
 | 전술 | 기법 ID | 기법 이름 | 공격자가 한 행위 | 증거 | 신뢰도 |
 |------|--------|----------|----------------|------|--------|
-(TTP 매핑 데이터를 기반으로 작성. Procedure는 이번 세션에서 구체적으로 관찰된 행위로 서술)
+(위 [TTP 매핑] 섹션에 있는 항목만 행으로 추가하세요. 목록에 없는 기법 ID는 절대 추가하지 마세요.
+Procedure 열에는 이번 세션에서 구체적으로 관찰된 행위를 서술하세요.)
 
 ## 4. 공격자 식별 지표 (IOC)
 
