@@ -233,7 +233,9 @@ def generate_attack_report(session_id: str) -> str:
     compact_timestamp = now.strftime("%Y%m%dT%H%M%SZ")
     session_slug = _safe_filename(session_id[:16])
     action_count = len(action_log)
-    md_base = f"{display_timestamp}_{session_slug}_actions-{action_count:03d}_attack-report"
+    md_base = (
+        f"{display_timestamp}_{session_slug}_actions-{action_count:03d}_attack-report"
+    )
     artifact_base = f"{compact_timestamp}_{session_slug}_actions-{action_count:03d}"
 
     md_path = _MARKDOWN_REPORT_DIR / f"{md_base}.md"

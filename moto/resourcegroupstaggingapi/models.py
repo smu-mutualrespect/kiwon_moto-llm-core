@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, Optional
 
 from moto.acm.models import AWSCertificateManagerBackend, acm_backends
@@ -288,24 +288,38 @@ class ResourceGroupsTaggingAPIBackend(BaseBackend):
         # https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html
 
         # TODO move these to their respective backends
-        filters = []
+        def key_filter(key: str) -> Callable[[Any, Any], bool]:
+            def _matches(tag_key: Any, tag_value: Any) -> bool:
+                return tag_key == key
+
+            return _matches
+
+        def key_value_filter(key: str, value: Any) -> Callable[[Any, Any], bool]:
+            def _matches(tag_key: Any, tag_value: Any) -> bool:
+                return tag_key == key and tag_value == value
+
+            return _matches
+
+        def key_values_filter(
+            key: str, values: list[Any]
+        ) -> Callable[[Any, Any], bool]:
+            def _matches(tag_key: Any, tag_value: Any) -> bool:
+                return tag_key == key and tag_value in values
+
+            return _matches
+
+        filters: list[Callable[[Any, Any], bool]] = []
         for tag_filter_dict in tag_filters:  # type: ignore
             values = tag_filter_dict.get("Values", [])
             if len(values) == 0:
                 # Check key matches
-                filters.append(lambda t, v, key=tag_filter_dict["Key"]: t == key)
+                filters.append(key_filter(tag_filter_dict["Key"]))
             elif len(values) == 1:
                 # Check it's exactly the same as key, value
-                filters.append(
-                    lambda t, v, key=tag_filter_dict["Key"], value=values[0]: t == key  # type: ignore
-                    and v == value
-                )
+                filters.append(key_value_filter(tag_filter_dict["Key"], values[0]))
             else:
                 # Check key matches and value is one of the provided values
-                filters.append(
-                    lambda t, v, key=tag_filter_dict["Key"], vl=values: t == key  # type: ignore
-                    and v in vl
-                )
+                filters.append(key_values_filter(tag_filter_dict["Key"], values))
 
         def tag_filter(tag_list: list[dict[str, Any]]) -> bool:
             result = []

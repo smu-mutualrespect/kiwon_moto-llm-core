@@ -19,9 +19,15 @@ class EC2BaseResponse(BaseResponse):
         # ENI
         "DescribeNetworkInterfacesResult.NetworkInterfaces.NetworkInterface.Association": return_if_not_empty,
         # IAM Instance Profiles
-        "AssociateIamInstanceProfileResult.IamInstanceProfileAssociation.State": lambda _: "associating",
-        "DisassociateIamInstanceProfileResult.IamInstanceProfileAssociation.State": lambda _: "disassociating",
-        "ReplaceIamInstanceProfileAssociationResult.IamInstanceProfileAssociation.State": lambda _: "associating",
+        "AssociateIamInstanceProfileResult.IamInstanceProfileAssociation.State": lambda _: (
+            "associating"
+        ),
+        "DisassociateIamInstanceProfileResult.IamInstanceProfileAssociation.State": lambda _: (
+            "disassociating"
+        ),
+        "ReplaceIamInstanceProfileAssociationResult.IamInstanceProfileAssociation.State": lambda _: (
+            "associating"
+        ),
         # Instances
         "Instances.Instance.Tags": return_if_not_empty,
         "RunInstances.Reservation.Instances.Instance.State": lambda _: {
@@ -36,7 +42,9 @@ class EC2BaseResponse(BaseResponse):
         "TransitGatewayAttachments.TransitGatewayAttachment.Tags": return_if_not_empty,
         # Volumes
         "CreateVolumeResponse.State": lambda _: "creating",
-        "ModifyVolumeResponse.VolumeModification.ModificationState": lambda _: "modifying",
+        "ModifyVolumeResponse.VolumeModification.ModificationState": lambda _: (
+            "modifying"
+        ),
         "ModifyVolumeResponse.VolumeModification.Progress": lambda _: 0,
         "Volume.Tags": return_if_not_empty,
         "Volumes.Volume.Tags": return_if_not_empty,
