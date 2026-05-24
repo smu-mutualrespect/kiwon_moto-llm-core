@@ -194,6 +194,7 @@ def _start_debug_server() -> None:
     )
     from moto.core.llm_agents.tools.state_tools import _action_log as _al
     from moto.core.llm_agents.tools.state_tools import _last_activity as _la
+    from moto.core.llm_agents.tools.state_tools import _reported_action_counts as _rac
     from moto.core.llm_agents.tools.state_tools import _session_state as _ss
     from moto.core.llm_agents.tools.state_tools import _session_summary as _sc
 
@@ -204,16 +205,27 @@ def _start_debug_server() -> None:
         result = {}
         # 활성 세션
         for sid in set(list(_al.keys()) + list(_ss.keys())):
+            action_count = len(_al.get(sid, []))
+            reported_count = _rac.get(sid, 0)
+            summary = _sc.get(sid, {})
             result[sid] = {
-                "status": "active",
-                "action_count": len(_al.get(sid, [])),
+                "status": "reported"
+                if summary and action_count <= reported_count
+                else "active",
+                "action_count": action_count,
                 "actions": [
                     f"{e['service']}:{e['operation']} [{e['source']}]"
                     for e in _al.get(sid, [])
                 ],
-                "risk_score": _ss.get(sid, {}).get("risk_score"),
                 "idle_sec": round(_time.time() - _la[sid], 1) if sid in _la else None,
             }
+            if summary:
+                result[sid].update(
+                    {
+                        "reported_at": summary.get("reported_at"),
+                        "report_path": summary.get("report_path"),
+                    }
+                )
         # 보고 완료 세션 (메모리에서 해제됐지만 요약은 보존)
         for sid, summary in _sc.items():
             if sid not in result:

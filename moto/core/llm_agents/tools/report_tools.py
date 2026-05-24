@@ -15,8 +15,9 @@ from moto.core.llm_agents.tools.attack_db import get_technique
 from moto.core.llm_agents.tools.state_tools import (
     get_full_action_log,
     get_idle_sessions,
+    get_report_path,
+    get_reported_action_count,
     get_session_state_snapshot,
-    is_session_reported,
     mark_session_reported,
 )
 from moto.core.llm_agents.tools.stix_export import generate_stix_bundle
@@ -24,6 +25,8 @@ from moto.core.llm_agents.tools.stix_export import generate_stix_bundle
 _log = logging.getLogger(__name__)
 
 _REPORT_DIR = Path(os.getenv("MOTO_HONEYPOT_REPORT_DIR", "reports"))
+_MARKDOWN_REPORT_DIR = _REPORT_DIR / "markdown"
+_ARTIFACT_REPORT_DIR = _REPORT_DIR / "artifacts"
 _IDLE_SECONDS = float(os.getenv("MOTO_HONEYPOT_SESSION_TIMEOUT", "300"))
 _REPORT_MODEL = os.getenv("MOTO_LLM_REPORT_MODEL") or None
 _REPORT_MAX_TOKENS = int(os.getenv("MOTO_LLM_REPORT_MAX_TOKENS", "5000"))
@@ -198,12 +201,12 @@ def generate_attack_report(session_id: str) -> str:
 
     저장된 보고서 파일 경로를 반환하며, 기록된 활동이 없으면 빈 문자열을 반환합니다.
     """
-    if is_session_reported(session_id):
-        return ""
     state = get_session_state_snapshot(session_id)
     action_log = get_full_action_log(session_id)
     if not action_log:
         return ""
+    if len(action_log) <= get_reported_action_count(session_id):
+        return get_report_path(session_id)
 
     timing = _compute_timing_analysis(action_log)
     iocs = _extract_iocs(session_id, state, action_log, timing)
@@ -223,11 +226,17 @@ def generate_attack_report(session_id: str) -> str:
         max_tokens=_REPORT_MAX_TOKENS,
     )
 
-    _REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    base = f"{session_id[:16]}_{timestamp}"
+    _MARKDOWN_REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    _ARTIFACT_REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc)
+    display_timestamp = now.strftime("%Y-%m-%d_%H-%M-%S_UTC")
+    compact_timestamp = now.strftime("%Y%m%dT%H%M%SZ")
+    session_slug = _safe_filename(session_id[:16])
+    action_count = len(action_log)
+    md_base = f"{display_timestamp}_{session_slug}_actions-{action_count:03d}_attack-report"
+    artifact_base = f"{compact_timestamp}_{session_slug}_actions-{action_count:03d}"
 
-    md_path = _REPORT_DIR / f"{base}.md"
+    md_path = _MARKDOWN_REPORT_DIR / f"{md_base}.md"
     md_path.write_text(report_md, encoding="utf-8")
 
     # 보고서 생성 메트릭 로그
@@ -244,7 +253,7 @@ def generate_attack_report(session_id: str) -> str:
     )
 
     # 메트릭 파일 저장 (측정용)
-    metrics_path = _REPORT_DIR / f"{base}.metrics.json"
+    metrics_path = _ARTIFACT_REPORT_DIR / f"{artifact_base}.metrics.json"
     metrics_path.write_text(
         json.dumps(
             {
@@ -262,7 +271,7 @@ def generate_attack_report(session_id: str) -> str:
     )
 
     # ATT&CK Navigator 레이어 JSON
-    navigator_path = _REPORT_DIR / f"{base}_navigator.json"
+    navigator_path = _ARTIFACT_REPORT_DIR / f"{artifact_base}_navigator.json"
     navigator_path.write_text(
         json.dumps(
             generate_navigator_layer(session_id, ttp_map), ensure_ascii=False, indent=2
@@ -271,7 +280,7 @@ def generate_attack_report(session_id: str) -> str:
     )
 
     # STIX 2.1 번들 (SIEM/OpenCTI/MISP import용)
-    stix_path = _REPORT_DIR / f"{base}.stix.json"
+    stix_path = _ARTIFACT_REPORT_DIR / f"{artifact_base}.stix.json"
     stix_bundle = generate_stix_bundle(session_id, iocs, ttp_map, state, action_log)
     stix_path.write_text(
         json.dumps(stix_bundle, ensure_ascii=False, indent=2),
@@ -285,6 +294,12 @@ def generate_attack_report(session_id: str) -> str:
         flush=True,
     )
     return str(md_path)
+
+
+def _safe_filename(value: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_") else "-" for ch in value)
+    cleaned = cleaned.strip("-_")
+    return cleaned or "unknown-session"
 
 
 def generate_navigator_layer(

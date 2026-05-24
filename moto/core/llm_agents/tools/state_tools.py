@@ -17,6 +17,7 @@ _lock = threading.RLock()
 _action_log: dict[str, list[dict[str, Any]]] = {}
 _last_activity: dict[str, float] = {}
 _reported_sessions: set[str] = set()
+_reported_action_counts: dict[str, int] = {}
 _session_summary: dict[str, dict[str, Any]] = {}  # 보고 완료 세션의 요약 정보
 
 
@@ -724,34 +725,46 @@ def get_session_state_snapshot(session_id: str) -> dict[str, Any]:
 
 
 def get_idle_sessions(idle_seconds: float) -> list[str]:
-    """Return session IDs inactive for idle_seconds that have not yet been reported."""
+    """Return inactive sessions with unreported activity."""
     now = _time.time()
     with _lock:
         return [
             sid
             for sid, last in _last_activity.items()
-            if now - last >= idle_seconds and sid not in _reported_sessions
+            if now - last >= idle_seconds
+            and len(_action_log.get(sid, [])) > _reported_action_counts.get(sid, 0)
         ]
 
 
 def mark_session_reported(session_id: str, report_path: str = "") -> None:
-    """세션을 보고 완료로 표시하고 메모리에서 세션 데이터를 해제합니다."""
+    """세션을 보고 완료로 표시합니다.
+
+    보고서 생성 이후 같은 세션 ID로 활동이 이어질 수 있으므로 원본 action/state는
+    유지하고, 마지막 보고서가 포함한 action 개수만 저장합니다.
+    """
     with _lock:
         _reported_sessions.add(session_id)
         log = _action_log.get(session_id, [])
-        state = _session_state.get(session_id, {})
+        action_count = len(log)
+        _reported_action_counts[session_id] = action_count
         _session_summary[session_id] = {
-            "action_count": len(log),
-            "risk_score": state.get("risk_score"),
+            "action_count": action_count,
             "services": sorted({e["service"] for e in log}),
             "reported_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "report_path": report_path,
         }
-        _action_log.pop(session_id, None)
-        _session_state.pop(session_id, None)
-        _last_activity.pop(session_id, None)
 
 
 def is_session_reported(session_id: str) -> bool:
     with _lock:
         return session_id in _reported_sessions
+
+
+def get_reported_action_count(session_id: str) -> int:
+    with _lock:
+        return _reported_action_counts.get(session_id, 0)
+
+
+def get_report_path(session_id: str) -> str:
+    with _lock:
+        return str(_session_summary.get(session_id, {}).get("report_path") or "")
