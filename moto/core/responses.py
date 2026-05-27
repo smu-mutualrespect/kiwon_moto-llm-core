@@ -1020,11 +1020,6 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
         return body
 
     def _record_native_history_if_enabled(self, status: int, body: Any) -> None:
-        # 에러 응답(4xx/5xx)은 세션 이력에 기록하지 않는다.
-        # 에러 메시지 안의 리소스 ID가 후속 _session_error_needs_agent_fallback 검사에서
-        # "이전에 반환된 ID"로 오인되는 것을 방지한다.
-        if int(status) >= 400:
-            return
         if not self.service_name:
             return
         try:
@@ -1050,6 +1045,7 @@ class BaseResponse(_TemplateEnvironmentMixin, ActionAuthenticatorMixin):
                 canonical,
                 response_body,
                 status_code=int(status),
+                include_history=int(status) < 400,
             )
         except Exception:
             return

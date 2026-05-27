@@ -1,0 +1,24 @@
+services:
+  backend-api:
+    image: 847362915408.dkr.ecr.us-east-1.amazonaws.com/nexora-backend-api:latest
+    container_name: nexora-backend-api
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      AWS_REGION: us-east-1
+      SERVICE_NAME: backend-api
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./logs:/var/log/nexora
+
+  nginx:
+    image: nginx:1.24
+    container_name: nexora-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - backend-api

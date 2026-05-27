@@ -12,6 +12,24 @@ Ultimately, PhantomGate safely analyzes the attacker's tactics, techniques, and 
 
 ---
 
+## Honeypot Profile
+
+The current AWS deception profile is a Nexora production DevOps bastion environment.
+The canonical profile values live in `moto/core/llm_agents/honeypot_profile.py`, and
+the AWS mock response helpers live in `moto/core/llm_agents/honeypot_aws_mocks.py`.
+
+- OS: Ubuntu 22.04 LTS
+- Hostname: `ip-10-20-4-37`
+- User: `devops-operator`
+- Region: `us-east-1`
+- Account ID: `847362915408`
+- IAM user: `devops-operator`
+- Company prefix: `nexora`
+- EKS cluster: `nexora-prod-eks`
+- ECR registry: `847362915408.dkr.ecr.us-east-1.amazonaws.com`
+
+---
+
 ## Running the Honeypot Server
 
 First, switch to the user account you created and activate the virtual environment:

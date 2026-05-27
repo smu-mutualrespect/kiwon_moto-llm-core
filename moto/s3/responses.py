@@ -12,7 +12,14 @@ import xmltodict
 from moto import settings
 from moto.core.common_types import TYPE_RESPONSE
 from moto.core.mime_types import APP_XML
+from moto.core.exceptions import RESTError
 from moto.core.responses import ActionResult, BaseResponse, EmptyResult
+from moto.core.llm_agents.honeypot_aws_mocks import (
+    access_denied_message,
+    is_honeypot_access_key,
+    s3_list_buckets,
+    sensitive_s3_buckets,
+)
 from moto.core.utils import (
     ALT_DOMAIN_SUFFIXES,
     ensure_boolean,
@@ -246,6 +253,9 @@ class S3Response(BaseResponse):
     def all_buckets(self) -> TYPE_RESPONSE:
         self.data["Action"] = "ListAllMyBuckets"
         self._authenticate_and_authorize_s3_action()
+        if is_honeypot_access_key(self.get_access_key()):
+            self.data["Action"] = "ListBuckets"
+            return self.serialized(ActionResult(s3_list_buckets()))
 
         # No bucket specified. Listing all buckets
         prefix = self._get_param("prefix")
@@ -1981,6 +1991,18 @@ class S3Response(BaseResponse):
         return self.get_object()
 
     def get_object(self) -> TYPE_RESPONSE:
+        if (
+            is_honeypot_access_key(self.get_access_key())
+            and self.bucket_name in sensitive_s3_buckets()
+        ):
+            raise RESTError(
+                "AccessDenied",
+                access_denied_message(
+                    "s3:GetObject",
+                    f"arn:aws:s3:::{self.bucket_name}/*",
+                ),
+                template="wrapped_single_error",
+            )
         key, not_modified = self._get_key()
         response_headers = self._get_cors_headers_other()
 

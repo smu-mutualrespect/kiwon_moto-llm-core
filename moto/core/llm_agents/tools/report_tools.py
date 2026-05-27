@@ -31,9 +31,6 @@ _IDLE_SECONDS = float(os.getenv("MOTO_HONEYPOT_SESSION_TIMEOUT", "300"))
 _REPORT_MODEL = os.getenv("MOTO_LLM_REPORT_MODEL") or None
 _REPORT_MAX_TOKENS = int(os.getenv("MOTO_LLM_REPORT_MAX_TOKENS", "5000"))
 
-# TLP(Traffic Light Protocol) 등급 — 조직 설정에 따라 변경
-_TLP_LEVEL = os.getenv("MOTO_HONEYPOT_TLP", "TLP:AMBER")
-
 # 작업(operation) → MITRE ATT&CK 기법 ID 정적 매핑
 # ref: https://attack.mitre.org/matrices/enterprise/cloud/
 _OP_TO_TECHNIQUE: dict[tuple[str, str], str] = {
@@ -518,6 +515,21 @@ def _map_ttps(action_log: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return result
 
 
+def _resolve_session_start_time(
+    state: dict[str, Any], action_log: list[dict[str, Any]]
+) -> str:
+    state_start = state.get("session_start_time")
+    if state_start:
+        return str(state_start)
+
+    for entry in action_log:
+        timestamp = entry.get("timestamp")
+        if timestamp:
+            return str(timestamp)
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _build_report_prompt(
     session_id: str,
     state: dict[str, Any],
@@ -526,8 +538,23 @@ def _build_report_prompt(
     iocs: dict[str, Any],
     ttp_map: dict[str, dict[str, Any]],
 ) -> str:
-    start_time = state.get("session_start_time", "unknown")
+    start_time = _resolve_session_start_time(state, action_log)
     account_id = state.get("consistency_locks", {}).get("account_id", "unknown")
+    profile = state.get("honeypot_profile")
+    profile_lines = ["데이터 없음"]
+    if isinstance(profile, dict) and profile:
+        profile_lines = [
+            f"- 회사: {profile.get('company', 'unknown')}",
+            f"- 환경: {profile.get('environment', 'unknown')}",
+            f"- 계정 ID: {profile.get('account_id', account_id)}",
+            f"- 리전: {profile.get('region', state.get('region', 'unknown'))}",
+            f"- IAM 사용자: {profile.get('iam_user', 'unknown')}",
+            f"- IAM ARN: {profile.get('iam_arn', 'unknown')}",
+            f"- 호스트명: {profile.get('hostname', 'unknown')}",
+            f"- EKS 클러스터: {profile.get('eks_cluster', 'unknown')}",
+            f"- ECR 레지스트리: {profile.get('ecr_registry', 'unknown')}",
+            f"- 백업 버킷: {profile.get('backup_bucket', 'unknown')}",
+        ]
 
     total_ops = len(action_log)
     services_used = sorted({e["service"] for e in action_log})
@@ -541,6 +568,8 @@ def _build_report_prompt(
             f"[{i:02d}] {entry['timestamp']} | [{entry['phase']}] "
             f"{entry['service']}:{entry['operation']} | 출처={entry['source']}"
         )
+        if "status_code" in entry:
+            line += f" | 상태=HTTP {entry.get('status_code')}"
         if assets:
             line += f" | 발견자산={', '.join(str(a) for a in assets[:2])}"
         timeline_lines.append(line)
@@ -577,6 +606,10 @@ def _build_report_prompt(
 - 아래 [TTP 매핑] 섹션에 제공된 기법 ID만 사용하세요.
 - 제공되지 않은 기법 ID(예: T1234, T1234.001 등)를 추론하거나 추가하지 마세요.
 - TTP 표는 제공된 매핑 데이터만으로 채우고, 매핑이 없는 작업은 TTP 표에 포함하지 마세요.
+- `sts:GetCallerIdentity`는 자격증명 확인 신호로만 다루고, 차단/제한 권고 대상으로 쓰지 마세요.
+- 허니팟의 가상 계정 ID와 관찰된 ARN 내부 계정 ID가 다를 수 있습니다. 이 경우 둘을 억지로 일치시키거나 실제 계정 소유로 단정하지 말고, "관찰된 식별자"로만 표현하세요.
+- 타임라인에 `상태=HTTP 4xx/5xx`가 있는 작업은 성공한 행위가 아니라 실패한 시도입니다. 실패한 IAM mutation이나 secret 조회를 "생성했다", "획득했다"로 쓰지 말고 "시도했으나 거부/실패했다"로 표현하세요.
+- 보고서에는 아래 [허니팟 가상 회사 프로필]의 회사, 계정, 사용자, 주요 자산 이름을 반영하세요.
 
 ══════════════ 관찰 데이터 ══════════════
 
@@ -587,6 +620,9 @@ def _build_report_prompt(
 - 총 API 호출 수: {total_ops}
 - 탐색한 서비스: {", ".join(services_used)}
 - 관찰된 공격 단계 흐름: {" → ".join(phases_seen)}
+
+[허니팟 가상 회사 프로필]
+{chr(10).join(profile_lines)}
 
 [요청 타이밍 분석]
 {auto_note or "데이터 없음"}
@@ -609,7 +645,6 @@ def _build_report_prompt(
 
 # AWS 허니팟 공격 흐름 분석 보고서
 
-**문서 등급**: {_TLP_LEVEL}
 **작성일**: {datetime.now(timezone.utc).strftime("%Y년 %m월 %d일")}
 **세션**: {session_id[:16]}
 
@@ -626,6 +661,9 @@ def _build_report_prompt(
 | 탐색한 서비스 수 | |
 | 총 API 호출 수 | |
 | 자동화 도구 사용 여부 | |
+| 가상 회사/환경 | |
+| 관찰된 IAM 주체 | |
+| 주요 Nexora 자산 | |
 
 ## 2. 공격 흐름 분석
 

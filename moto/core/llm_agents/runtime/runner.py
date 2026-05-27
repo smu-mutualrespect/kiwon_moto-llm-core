@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from ..profile_overrides import apply_honeypot_profile_overrides
 from ..shape_adapter import adapt_response_plan
 from ..tools import build_response_plan_tool, validate_rendered_response_tool
 from ..tools.render_tools import serialize_response_tool
@@ -58,6 +59,9 @@ def run_agent_loop(
                 if patches
                 else native_dict
             )
+            final_dict, profile_meta = apply_honeypot_profile_overrides(
+                canonical, final_dict, world_state
+            )
             response_body, rendered_meta = serialize_response_tool(
                 canonical, final_dict
             )
@@ -67,6 +71,7 @@ def run_agent_loop(
                     response_body=response_body,
                     rendered_meta={
                         **rendered_meta,
+                        **profile_meta,
                         "validation_passed": True,
                         "validation_reason": "moto_native_with_patches",
                         "attempts": 0,
@@ -138,6 +143,9 @@ def run_agent_loop(
             patched = _apply_resource_patches(
                 deepcopy(native_dict), agent_output.field_patches
             )
+            patched, profile_meta = apply_honeypot_profile_overrides(
+                canonical, patched, world_state
+            )
             response_body, rendered_meta = serialize_response_tool(canonical, patched)
             if response_body:
                 return AgentRunResult(
@@ -145,6 +153,7 @@ def run_agent_loop(
                     response_body=response_body,
                     rendered_meta={
                         **rendered_meta,
+                        **profile_meta,
                         "validation_passed": True,
                         "validation_reason": "field_patches_applied",
                         "attempts": attempt,
@@ -159,6 +168,9 @@ def run_agent_loop(
         # patched_field_values: agent가 전체 dict를 출력 (소형 응답에 대한 호환 경로)
         if agent_output.patched_field_values is not None:
             field_values = agent_output.patched_field_values
+            field_values, profile_meta = apply_honeypot_profile_overrides(
+                canonical, field_values, world_state
+            )
             response_body, rendered_meta = serialize_response_tool(
                 canonical, field_values
             )
@@ -168,6 +180,7 @@ def run_agent_loop(
                     response_body=response_body,
                     rendered_meta={
                         **rendered_meta,
+                        **profile_meta,
                         "validation_passed": True,
                         "validation_reason": "patched_field_values",
                         "attempts": attempt,
@@ -186,6 +199,9 @@ def run_agent_loop(
             canonical, response_plan, world_state
         )
         field_values = _refresh_live_timestamps(field_values)
+        field_values, profile_meta = apply_honeypot_profile_overrides(
+            canonical, field_values, world_state
+        )
         last_field_values = field_values  # validation 실패해도 state tracking에 보존
         response_body, rendered_meta = serialize_response_tool(canonical, field_values)
 
@@ -199,6 +215,7 @@ def run_agent_loop(
         merged_meta = {
             **plan_meta,
             **rendered_meta,
+            **profile_meta,
             "validation_passed": validation_passed,
             "validation_reason": validation_reason,
             "attempts": attempt,
@@ -227,6 +244,9 @@ def run_agent_loop(
             if patches
             else native_dict
         )
+        final_dict, profile_meta = apply_honeypot_profile_overrides(
+            canonical, final_dict, world_state
+        )
         response_body, rendered_meta = serialize_response_tool(canonical, final_dict)
         if response_body:
             return AgentRunResult(
@@ -234,6 +254,7 @@ def run_agent_loop(
                 response_body=response_body,
                 rendered_meta={
                     **rendered_meta,
+                    **profile_meta,
                     "validation_passed": True,
                     "validation_reason": "moto_native_with_patches",
                     "attempts": max_attempts,
@@ -380,6 +401,9 @@ def _try_response_cache(
         return None
 
     refreshed_fields = _refresh_live_timestamps(deepcopy(cached_fields))
+    refreshed_fields, profile_meta = apply_honeypot_profile_overrides(
+        canonical, refreshed_fields, world_state
+    )
     response_body, rendered_meta = serialize_response_tool(canonical, refreshed_fields)
     if not response_body:
         # 직렬화 실패 시 LLM으로 fallthrough
@@ -390,6 +414,7 @@ def _try_response_cache(
         response_body=response_body,
         rendered_meta={
             **rendered_meta,
+            **profile_meta,
             "validation_passed": True,
             "validation_reason": "response_cache_hit",
             "attempts": 0,

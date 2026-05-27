@@ -1,5 +1,11 @@
 from typing import Any
 
+from moto.core.exceptions import JsonRESTError
+from moto.core.llm_agents.honeypot_aws_mocks import (
+    access_denied_message,
+    is_honeypot_access_key,
+)
+from moto.core.llm_agents import honeypot_profile as profile
 from moto.core.responses import ActionResult, BaseResponse, EmptyResult
 
 from .exceptions import ParameterNotFound, ValidationException
@@ -167,6 +173,15 @@ class SimpleSystemManagerResponse(BaseResponse):
     def get_parameter(self) -> ActionResult:
         name = self._get_param("Name")
         with_decryption = self._get_param("WithDecryption")
+        if is_honeypot_access_key(self.get_access_key()):
+            raise JsonRESTError(
+                "AccessDeniedException",
+                access_denied_message(
+                    "ssm:GetParameter",
+                    f"arn:aws:ssm:{self.region}:"
+                    f"{profile.ACCOUNT_ID}:parameter/{name.lstrip('/')}",
+                ),
+            )
 
         if (
             name.startswith("/aws/reference/secretsmanager/")

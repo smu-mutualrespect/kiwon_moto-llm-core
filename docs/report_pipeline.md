@@ -136,7 +136,6 @@ Action Log의 timestamp들로 요청 간격을 계산합니다.
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
 | `MOTO_HONEYPOT_SESSION_TIMEOUT` | 300 | idle 몇 초 후 자동 보고서 생성 |
-| `MOTO_HONEYPOT_REPORT_DIR` | reports/ | 산출물 저장 경로 |
-| `MOTO_HONEYPOT_TLP` | TLP:AMBER | 보고서 문서 등급 |
+| `MOTO_HONEYPOT_REPORT_DIR` | reports/ | 산출물 저장 경로 (`markdown/`에는 사람이 보는 `.md`, `artifacts/`에는 metrics/Navigator/STIX JSON 저장) |
 | `MOTO_LLM_REPORT_MODEL` | (기본 모델 사용) | 보고서 전용 모델 지정 |
 | `MOTO_LLM_REPORT_MAX_TOKENS` | 5000 | 보고서 최대 토큰 수 |

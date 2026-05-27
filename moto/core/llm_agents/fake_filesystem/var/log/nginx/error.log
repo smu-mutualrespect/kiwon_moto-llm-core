@@ -1,0 +1,6 @@
+2026/05/24 10:03:42 [notice] 1312#1312: signal process started
+2026/05/24 10:03:43 [notice] 1313#1313: using the "epoll" event method
+2026/05/24 10:12:55 [warn] 1313#1313: upstream server temporarily disabled while connecting to upstream, upstream: "http://127.0.0.1:8080/health", host: "api.nexora.internal"
+2026/05/24 10:12:58 [notice] 1313#1313: upstream server 127.0.0.1:8080 recovered
+2026/05/25 08:18:12 [notice] 1312#1312: signal process started
+2026/05/26 08:15:33 [warn] 1313#1313: conflicting server name "api.nexora.internal" on 0.0.0.0:80, ignored

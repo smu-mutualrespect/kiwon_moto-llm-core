@@ -7,6 +7,10 @@ class IAMException(ServiceException):
     pass
 
 
+class AccessDenied(IAMException):
+    code = "AccessDenied"
+
+
 class NotFoundException(IAMException):
     code = "NoSuchEntity"
 

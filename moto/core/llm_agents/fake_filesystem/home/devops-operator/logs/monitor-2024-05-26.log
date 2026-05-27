@@ -1,0 +1,7 @@
+2026-05-26T08:10:04Z caller arn=arn:aws:sts::847362915408:assumed-role/nexora-prod-bastion-operator/devops-operator
+2026-05-26T08:10:08Z node ip-10-20-11-83.ec2.internal Ready version=v1.28.7 cluster=nexora-prod-eks
+2026-05-26T08:10:08Z node ip-10-20-12-41.ec2.internal Ready version=v1.28.7 cluster=nexora-prod-eks
+2026-05-26T08:10:09Z node ip-10-20-13-22.ec2.internal Ready version=v1.28.7 cluster=nexora-prod-eks
+2026-05-26T08:10:12Z systemctl nginx active=active
+2026-05-26T08:10:13Z systemctl backend-api active=active
+2026-05-26T08:10:14Z docker container=nexora-backend-api image=847362915408.dkr.ecr.us-east-1.amazonaws.com/nexora-backend-api:latest status=Up

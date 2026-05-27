@@ -1,0 +1,6 @@
+2026-05-24T10:12:20Z deploy start user=devops-operator account=847362915408 region=us-east-1 service=backend-api
+2026-05-24T10:12:27Z docker login registry=847362915408.dkr.ecr.us-east-1.amazonaws.com result=ok
+2026-05-24T10:12:33Z docker pull image=847362915408.dkr.ecr.us-east-1.amazonaws.com/nexora-backend-api:latest result=ok
+2026-05-24T10:12:51Z docker-compose up service=backend-api result=running
+2026-05-24T10:18:12Z kubectl rollout restart deployment/backend-api -n prod cluster=nexora-prod-eks result=requested
+2026-05-24T10:19:44Z kubectl rollout status deployment/backend-api -n prod result=success

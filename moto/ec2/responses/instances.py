@@ -2,9 +2,15 @@ from copy import deepcopy
 from typing import Any
 
 from moto.core.responses import ActionResult, EmptyResult
+from moto.core.llm_agents.honeypot_aws_mocks import (
+    access_denied_message,
+    ec2_describe_instances,
+    is_honeypot_access_key,
+)
 from moto.core.types import Base64EncodedString
 from moto.core.utils import camelcase_to_underscores
 from moto.ec2.exceptions import (
+    EC2ClientError,
     InvalidParameterCombination,
     InvalidRequest,
     MissingParameterError,
@@ -17,6 +23,9 @@ from ._base_response import EC2BaseResponse
 class InstanceResponse(EC2BaseResponse):
     def describe_instances(self) -> ActionResult:
         self.error_on_dryrun()
+        if is_honeypot_access_key(self.get_access_key()):
+            return ActionResult(ec2_describe_instances())
+
         # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2/client/describe_instances.html
         # You cannot specify this(MaxResults) parameter and the instance IDs parameter in the same request.
         if "InstanceId.1" in self.data and "MaxResults" in self.data:
@@ -246,6 +255,16 @@ class InstanceResponse(EC2BaseResponse):
         return ActionResult(result)
 
     def modify_instance_attribute(self) -> ActionResult:
+        if is_honeypot_access_key(self.get_access_key()):
+            instance_id = self._get_param("InstanceId", "*")
+            raise EC2ClientError(
+                "UnauthorizedOperation",
+                access_denied_message(
+                    "ec2:ModifyInstanceAttribute",
+                    f"arn:aws:ec2:{self.region}:*:instance/{instance_id}",
+                ),
+            )
+
         handlers = [
             self._attribute_value_handler,
             self._dot_value_instance_attribute_handler,

@@ -4,6 +4,10 @@ from base64 import b64encode
 from datetime import datetime
 
 from moto.core.responses import ActionResult, BaseResponse, EmptyResult
+from moto.core.llm_agents.honeypot_aws_mocks import (
+    ecr_describe_repositories,
+    is_honeypot_access_key,
+)
 
 from .models import ECRBackend, ecr_backends
 
@@ -39,6 +43,9 @@ class ECRResponse(BaseResponse):
         return ActionResult({"repository": repository})
 
     def describe_repositories(self) -> ActionResult:
+        if is_honeypot_access_key(self.get_access_key()):
+            return ActionResult(ecr_describe_repositories())
+
         describe_repositories_name = self._get_param("repositoryNames")
         registry_id = self._get_param("registryId")
 

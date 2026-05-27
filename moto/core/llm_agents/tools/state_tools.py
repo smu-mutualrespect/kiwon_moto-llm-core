@@ -123,22 +123,34 @@ def extract_session_id_tool(headers: dict[str, Any]) -> str:
 
 
 def get_world_state_tool(session_id: str, headers: dict[str, Any]) -> dict[str, Any]:
+    profile_state = _honeypot_profile_state(session_id)
     with _lock:
         if session_id not in _session_state:
             _session_state[session_id] = {
                 "session_id": session_id,
-                "persona": "mid-size-prod-account",
-                "region": headers.get("X-Amz-Region", "us-east-1"),
+                "persona": profile_state.get("persona", "mid-size-prod-account"),
+                "region": profile_state.get(
+                    "region", headers.get("X-Amz-Region", "us-east-1")
+                ),
                 "phase": "recon",
-                "exposed_assets": [],
-                "exposed_roles": ["ReadOnlyOpsRole"],
+                "exposed_assets": list(profile_state.get("exposed_assets", [])),
+                "exposed_roles": list(
+                    profile_state.get("exposed_roles", ["ReadOnlyOpsRole"])
+                ),
                 "credibility_level": "medium",
                 "risk_score": 0.2,
                 "last_actions": [],
                 "consistency_locks": {
-                    "account_id": _derive_account_id(session_id),
-                    "os_family": "Amazon Linux 2",
+                    "account_id": profile_state.get(
+                        "account_id", _derive_account_id(session_id)
+                    ),
+                    "os_family": profile_state.get("os_family", "Amazon Linux 2"),
                 },
+                **(
+                    {"honeypot_profile": profile_state["honeypot_profile"]}
+                    if "honeypot_profile" in profile_state
+                    else {}
+                ),
                 "known_names": {},
                 "agent_responses": [],
                 "response_cache": {},
@@ -156,6 +168,43 @@ def get_world_state_tool(session_id: str, headers: dict[str, Any]) -> dict[str, 
             if current_region:
                 _session_state[session_id]["region"] = current_region
         return deepcopy(_session_state[session_id])
+
+
+def _honeypot_profile_state(session_id: str) -> dict[str, Any]:
+    try:
+        from moto.core.llm_agents import honeypot_profile as profile
+        from moto.core.llm_agents.honeypot_aws_mocks import is_honeypot_access_key
+    except Exception:
+        return {}
+    if not is_honeypot_access_key(session_id):
+        return {}
+    return {
+        "persona": "nexora-prod-devops-bastion",
+        "region": profile.REGION,
+        "account_id": profile.ACCOUNT_ID,
+        "os_family": profile.OS_RELEASE,
+        "exposed_roles": [profile.INSTANCE_PROFILE],
+        "exposed_assets": [
+            profile.IAM_USER_ARN,
+            profile.BASTION_ROLE_ARN,
+            f"arn:aws:eks:{profile.REGION}:{profile.ACCOUNT_ID}:cluster/{profile.EKS_CLUSTER}",
+            profile.BACKEND_IMAGE,
+            f"s3://{profile.BACKUP_BUCKET}/daily",
+        ],
+        "honeypot_profile": {
+            "company": profile.COMPANY_PREFIX,
+            "environment": profile.ENVIRONMENT,
+            "account_id": profile.ACCOUNT_ID,
+            "region": profile.REGION,
+            "iam_user": profile.IAM_USER,
+            "iam_arn": profile.IAM_USER_ARN,
+            "hostname": profile.HOSTNAME,
+            "linux_user": profile.LINUX_USER,
+            "eks_cluster": profile.EKS_CLUSTER,
+            "ecr_registry": profile.ECR_REGISTRY,
+            "backup_bucket": profile.BACKUP_BUCKET,
+        },
+    }
 
 
 def update_world_state_tool(
@@ -275,61 +324,76 @@ def record_native_interaction_tool(
     response_body: str,
     *,
     status_code: int = 200,
+    include_history: bool = True,
 ) -> None:
-    add_to_session_history_tool(
-        session_id,
-        (
-            f"service={canonical.service}, operation={canonical.operation}, "
-            f"source=moto_native, status={status_code}"
-        ),
-        response_body,
-    )
+    if include_history:
+        add_to_session_history_tool(
+            session_id,
+            (
+                f"service={canonical.service}, operation={canonical.operation}, "
+                f"source=moto_native, status={status_code}"
+            ),
+            response_body,
+        )
 
     with _lock:
         current = _session_state.get(session_id, {})
+        profile_state = _honeypot_profile_state(session_id)
         next_state = deepcopy(current)
         next_state.setdefault("session_id", session_id)
-        next_state.setdefault("persona", "mid-size-prod-account")
-        next_state.setdefault("region", "us-east-1")
+        next_state.setdefault(
+            "persona", profile_state.get("persona", "mid-size-prod-account")
+        )
+        next_state.setdefault("region", profile_state.get("region", "us-east-1"))
         next_state.setdefault("phase", "recon")
-        next_state.setdefault("exposed_roles", ["ReadOnlyOpsRole"])
+        next_state.setdefault(
+            "exposed_roles", profile_state.get("exposed_roles", ["ReadOnlyOpsRole"])
+        )
         next_state.setdefault("credibility_level", "medium")
         next_state.setdefault("risk_score", 0.2)
         next_state.setdefault("resource_registry", {})
         next_state.setdefault(
+            "exposed_assets", list(profile_state.get("exposed_assets", []))
+        )
+        next_state.setdefault(
             "consistency_locks",
             {
-                "account_id": _derive_account_id(session_id),
-                "os_family": "Amazon Linux 2",
+                "account_id": profile_state.get(
+                    "account_id", _derive_account_id(session_id)
+                ),
+                "os_family": profile_state.get("os_family", "Amazon Linux 2"),
             },
         )
+        if "honeypot_profile" in profile_state:
+            next_state.setdefault("honeypot_profile", profile_state["honeypot_profile"])
 
         action_key = f"{canonical.service}:{canonical.operation}"
         last_actions = list(next_state.get("last_actions", []))
         last_actions.append(action_key)
         next_state["last_actions"] = last_actions[-10:]
 
-        exposed_assets = list(next_state.get("exposed_assets", []))
         newly_found: list[str] = []
-        for asset in _extract_assets_from_response(response_body):
-            if asset not in exposed_assets:
-                exposed_assets.append(asset)
-                newly_found.append(asset)
-        next_state["exposed_assets"] = exposed_assets[-50:]
+        if include_history:
+            exposed_assets = list(next_state.get("exposed_assets", []))
+            for asset in _extract_assets_from_response(response_body):
+                if asset not in exposed_assets:
+                    exposed_assets.append(asset)
+                    newly_found.append(asset)
+            next_state["exposed_assets"] = exposed_assets[-50:]
 
-        # native 응답에서도 이름 필드 추출 → 에이전트 응답과 이름 일관성 유지
-        known_names = dict(next_state.get("known_names", {}))
-        try:
-            parsed = json.loads(response_body)
-            _merge_known_names(known_names, parsed, canonical.service)
-            _merge_aws_tags(known_names, parsed, canonical.service)
-            # native 응답의 NextToken을 기록 → 에이전트가 해당 토큰 수신 시 빈 결과 반환
-            _record_pagination_tokens(next_state, parsed)
-        except Exception:
-            # JSON 파싱 실패 시 XML로 재시도 (EC2/S3 등 XML 프로토콜 서비스)
-            _merge_known_names_from_xml(known_names, response_body, canonical.service)
-            _record_pagination_tokens_from_xml(next_state, response_body)
-        next_state["known_names"] = known_names
+            # native 응답에서도 이름 필드 추출 → 에이전트 응답과 이름 일관성 유지
+            known_names = dict(next_state.get("known_names", {}))
+            try:
+                parsed = json.loads(response_body)
+                _merge_known_names(known_names, parsed, canonical.service)
+                _merge_aws_tags(known_names, parsed, canonical.service)
+                # native 응답의 NextToken을 기록 → 에이전트가 해당 토큰 수신 시 빈 결과 반환
+                _record_pagination_tokens(next_state, parsed)
+            except Exception:
+                # JSON 파싱 실패 시 XML로 재시도 (EC2/S3 등 XML 프로토콜 서비스)
+                _merge_known_names_from_xml(known_names, response_body, canonical.service)
+                _record_pagination_tokens_from_xml(next_state, response_body)
+            next_state["known_names"] = known_names
 
         # moto native 쓰기 연산 성공 시 캐시 무효화 (agent 경로와 동일한 정책)
         if status_code < 300 and not _should_cache_operation(canonical.operation):
@@ -386,6 +450,8 @@ _CACHE_OPERATION_PREFIXES = (
 
 
 def _should_cache_operation(operation: str) -> bool:
+    if operation in {"ListServiceSpecificCredentials"}:
+        return False
     return operation.lower().startswith(_CACHE_OPERATION_PREFIXES)
 
 
