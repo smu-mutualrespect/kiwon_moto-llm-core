@@ -164,7 +164,11 @@ def _override_bedrock_list_foundation_models(
     ]
     payload["modelSummaries"] = [
         {
-            **(summaries[idx] if idx < len(summaries) and isinstance(summaries[idx], dict) else {}),
+            **(
+                summaries[idx]
+                if idx < len(summaries) and isinstance(summaries[idx], dict)
+                else {}
+            ),
             "modelArn": f"arn:aws:bedrock:{profile.REGION}::foundation-model/{model_id}",
             "modelId": model_id,
             "modelName": name,
@@ -188,9 +192,13 @@ def _override_ec2_monitor(payload: dict[str, Any], canonical: CanonicalRequest) 
     )
     if isinstance(target, list):
         target = target[0] if target else profile.INSTANCE_ID
-    items = _find_first_list(payload, "instancesSet") or _find_first_list(payload, "InstanceMonitoring")
+    items = _find_first_list(payload, "instancesSet") or _find_first_list(
+        payload, "InstanceMonitoring"
+    )
     if not items:
-        payload["InstanceMonitoring"] = [{"InstanceId": str(target), "Monitoring": {"State": "enabled"}}]
+        payload["InstanceMonitoring"] = [
+            {"InstanceId": str(target), "Monitoring": {"State": "enabled"}}
+        ]
         return
     for item in items:
         if not isinstance(item, dict):
@@ -268,7 +276,9 @@ def _override_named_collection(
             payload[token_key] = ""
 
 
-def _override_billing_groups(payload: dict[str, Any], canonical: CanonicalRequest) -> None:
+def _override_billing_groups(
+    payload: dict[str, Any], canonical: CanonicalRequest
+) -> None:
     _override_named_collection(
         payload,
         "BillingGroups",
@@ -297,7 +307,9 @@ def _override_billing_groups(payload: dict[str, Any], canonical: CanonicalReques
             }
 
 
-def _override_frauddetector(payload: dict[str, Any], canonical: CanonicalRequest) -> None:
+def _override_frauddetector(
+    payload: dict[str, Any], canonical: CanonicalRequest
+) -> None:
     detectors = payload.get("detectors")
     if not isinstance(detectors, list) or not detectors:
         detectors = [{}]
@@ -325,7 +337,9 @@ def _override_detective(payload: dict[str, Any], canonical: CanonicalRequest) ->
     payload["NextToken"] = ""
 
 
-def _override_auditmanager(payload: dict[str, Any], canonical: CanonicalRequest) -> None:
+def _override_auditmanager(
+    payload: dict[str, Any], canonical: CanonicalRequest
+) -> None:
     payload["assessmentMetadata"] = [
         {
             "name": "nexora-prod-soc2-assessment",
@@ -373,7 +387,10 @@ def _override_outposts(payload: dict[str, Any], canonical: CanonicalRequest) -> 
             "LifeCycleStatus": "ACTIVE",
             "AvailabilityZone": f"{profile.REGION}a",
             "AvailabilityZoneId": "use1-az1",
-            "Tags": {"Environment": profile.ENVIRONMENT, "Company": profile.COMPANY_PREFIX},
+            "Tags": {
+                "Environment": profile.ENVIRONMENT,
+                "Company": profile.COMPANY_PREFIX,
+            },
             "SupportedHardwareType": "RACK",
         }
     ]
@@ -394,7 +411,10 @@ def _override_appflow(payload: dict[str, Any], canonical: CanonicalRequest) -> N
             "lastUpdatedAt": 1716624000,
             "createdBy": profile.IAM_USER,
             "lastUpdatedBy": profile.IAM_USER,
-            "tags": {"Environment": profile.ENVIRONMENT, "Company": profile.COMPANY_PREFIX},
+            "tags": {
+                "Environment": profile.ENVIRONMENT,
+                "Company": profile.COMPANY_PREFIX,
+            },
         }
     ]
     payload["nextToken"] = ""
@@ -434,7 +454,9 @@ def _override_codeguru(payload: dict[str, Any], canonical: CanonicalRequest) -> 
     payload["NextToken"] = ""
 
 
-def _override_backup_gateway(payload: dict[str, Any], canonical: CanonicalRequest) -> None:
+def _override_backup_gateway(
+    payload: dict[str, Any], canonical: CanonicalRequest
+) -> None:
     payload["Gateways"] = [
         {
             "GatewayArn": f"arn:aws:backup-gateway:{profile.REGION}:{profile.ACCOUNT_ID}:gateway/nexora-prod-backup-gateway",
@@ -480,7 +502,11 @@ def _override_ecr_batch_check_layer_availability(
         or "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4"
     )
     if isinstance(digest, list):
-        digest = digest[0] if digest else "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4"
+        digest = (
+            digest[0]
+            if digest
+            else "sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4"
+        )
     payload["layers"] = [
         {
             "layerDigest": str(digest),
@@ -498,7 +524,9 @@ def _override_ecr_complete_layer_upload(
     payload["registryId"] = profile.ACCOUNT_ID
     payload["repositoryName"] = profile.ECR_REPOSITORIES[0]
     if "uploadId" not in payload:
-        payload["uploadId"] = str(canonical.request_params.get("uploadId") or "upload-nexora-prod")
+        payload["uploadId"] = str(
+            canonical.request_params.get("uploadId") or "upload-nexora-prod"
+        )
     if "layerDigest" not in payload:
         payload["layerDigest"] = str(
             canonical.request_params.get("layerDigest")
@@ -507,7 +535,9 @@ def _override_ecr_complete_layer_upload(
         )
 
 
-def _override_iam_context_keys(payload: dict[str, Any], canonical: CanonicalRequest) -> None:
+def _override_iam_context_keys(
+    payload: dict[str, Any], canonical: CanonicalRequest
+) -> None:
     payload["ContextKeyNames"] = ["aws:RequestedRegion", "aws:PrincipalArn"]
 
 
@@ -553,7 +583,9 @@ def _override_secrets_validate_policy(
         or canonical.request_params.get("resourcePolicy")
         or ""
     )
-    broad = '"Principal":"*"' in raw_policy.replace(" ", "") or '"AWS":"*"' in raw_policy.replace(" ", "")
+    broad = '"Principal":"*"' in raw_policy.replace(
+        " ", ""
+    ) or '"AWS":"*"' in raw_policy.replace(" ", "")
     if broad:
         payload["PolicyValidationPassed"] = False
         payload["ValidationErrors"] = [
@@ -693,7 +725,10 @@ _OPERATION_OVERRIDES: dict[
     ("codeguru-reviewer", "ListRepositoryAssociations"): _override_codeguru,
     ("backup-gateway", "ListGateways"): _override_backup_gateway,
     ("ssm", "DescribeInstanceInformation"): _override_ssm_describe_instance_information,
-    ("ecr", "BatchCheckLayerAvailability"): _override_ecr_batch_check_layer_availability,
+    (
+        "ecr",
+        "BatchCheckLayerAvailability",
+    ): _override_ecr_batch_check_layer_availability,
     ("ecr", "CompleteLayerUpload"): _override_ecr_complete_layer_upload,
     ("iam", "GetContextKeysForPrincipalPolicy"): _override_iam_context_keys,
     ("iam", "ListServiceSpecificCredentials"): _override_iam_list_service_specific,

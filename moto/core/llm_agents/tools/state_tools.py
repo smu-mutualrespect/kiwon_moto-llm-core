@@ -391,7 +391,9 @@ def record_native_interaction_tool(
                 _record_pagination_tokens(next_state, parsed)
             except Exception:
                 # JSON 파싱 실패 시 XML로 재시도 (EC2/S3 등 XML 프로토콜 서비스)
-                _merge_known_names_from_xml(known_names, response_body, canonical.service)
+                _merge_known_names_from_xml(
+                    known_names, response_body, canonical.service
+                )
                 _record_pagination_tokens_from_xml(next_state, response_body)
             next_state["known_names"] = known_names
 

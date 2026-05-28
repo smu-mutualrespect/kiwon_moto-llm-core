@@ -245,7 +245,10 @@ def s3_list_buckets() -> dict[str, Any]:
             "DisplayName": profile.COMPANY_PREFIX,
         },
         "Buckets": [
-            {"Name": bucket, "CreationDate": f"2024-0{(idx % 5) + 1}-1{idx}T03:12:00.000Z"}
+            {
+                "Name": bucket,
+                "CreationDate": f"2024-0{(idx % 5) + 1}-1{idx}T03:12:00.000Z",
+            }
             for idx, bucket in enumerate(buckets)
         ],
     }
@@ -317,7 +320,9 @@ def ec2_describe_instances() -> dict[str, Any]:
                             }
                         ],
                         "IamInstanceProfile": {
-                            "Arn": profile.BASTION_ROLE_ARN if idx == 0 else profile.EKS_ROLE_ARN,
+                            "Arn": profile.BASTION_ROLE_ARN
+                            if idx == 0
+                            else profile.EKS_ROLE_ARN,
                             "Id": f"AIPANEXORA{idx:02d}EXAMPLE",
                         },
                         "Tags": [
@@ -329,8 +334,14 @@ def ec2_describe_instances() -> dict[str, Any]:
                     }
                 ],
             }
-            for idx, (instance_id, hostname, name, private_ip, subnet_id, instance_type)
-            in enumerate(instances)
+            for idx, (
+                instance_id,
+                hostname,
+                name,
+                private_ip,
+                subnet_id,
+                instance_type,
+            ) in enumerate(instances)
         ],
         "NextToken": None,
     }

@@ -4,11 +4,11 @@ import sys
 from typing import Any, Union
 from urllib.parse import unquote
 
-from moto.core.responses import TYPE_RESPONSE, ActionResult, BaseResponse
 from moto.core.llm_agents.honeypot_aws_mocks import (
     is_honeypot_access_key,
     lambda_list_functions,
 )
+from moto.core.responses import TYPE_RESPONSE, ActionResult, BaseResponse
 from moto.utilities.aws_headers import amz_crc32
 from moto.utilities.utils import ARN_PARTITION_REGEX
 
