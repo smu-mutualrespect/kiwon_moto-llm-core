@@ -5,6 +5,8 @@ from moto.core.exceptions import JsonRESTError
 from moto.core.llm_agents.honeypot_aws_mocks import (
     access_denied_message,
     is_honeypot_access_key,
+    secretsmanager_list_secrets,
+    validate_secret_resource_policy,
 )
 from moto.core.responses import BaseResponse
 from moto.secretsmanager.exceptions import (
@@ -181,8 +183,9 @@ class SecretsManagerResponse(BaseResponse):
         return self.backend.list_secret_version_ids(secret_id=secret_id)
 
     def list_secrets(self) -> str:
+        if is_honeypot_access_key(self.get_access_key()):
+            return json.dumps(secretsmanager_list_secrets())
         filters = self._get_param("Filters", if_none=[])
-        _validate_filters(filters)
         max_results = self._get_int_param("MaxResults")
         next_token = self._get_param("NextToken")
         include_planned_deletion = self._get_param(
@@ -221,6 +224,11 @@ class SecretsManagerResponse(BaseResponse):
         policy = self._get_param("ResourcePolicy")
         arn, name = self.backend.put_resource_policy(secret_id, policy)
         return json.dumps({"ARN": arn, "Name": name})
+
+    def validate_resource_policy(self) -> str:
+        if is_honeypot_access_key(self.get_access_key()):
+            return json.dumps(validate_secret_resource_policy())
+        return json.dumps({"PolicyValidationPassed": True, "ValidationErrors": []})
 
     def delete_resource_policy(self) -> str:
         secret_id = self._get_param("SecretId")

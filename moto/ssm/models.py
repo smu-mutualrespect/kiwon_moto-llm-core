@@ -646,8 +646,8 @@ class Document(CloudFormationModel):
             self.description = content_json.get("description")
             self.outputs = content_json.get("outputs")
             self.files = content_json.get("files")
-            # TODO add platformType (requires mapping the ssm actions to OS's this isn't well documented)
-            self.platform_types = ["Not Implemented (moto)"]
+            # Best-effort platform hint for DescribeDocument-style responses.
+            self.platform_types = ["Linux"]
             self.parameter_list = generate_ssm_doc_param_list(
                 content_json.get("parameters")
             )

@@ -1,3 +1,4 @@
+from moto.core.llm_agents import honeypot_profile
 from moto.core.responses import ActionResult, BaseResponse
 
 from .exceptions import STSValidationError
@@ -26,9 +27,15 @@ class TokenResponse(BaseResponse):
         token = self.backend.get_session_token(duration=duration)
         result = {
             "Credentials": {
-                "AccessKeyId": "AKIAIOSFODNN7EXAMPLE",
-                "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYzEXAMPLEKEY",
-                "SessionToken": "AQoEXAMPLEH4aoAH0gNCAPyJxz4BlCFFxWNE1OPTgk5TthT+FvwqnKwRcOIfrRh3c/LTo6UDdyJwOOvEVPvLXCrrrUtdnniCEXAMPLE/IvU1dYUg2RVAJBanLiHb4IgRmpRV3zrkuWJOgQs8IZZaIv2BXIa2R4OlgkBN9bkUDNCJiBeb/AXlzBBko7b15fjrBs2+cTQtpZ3CYWFXG8C5zqx37wnOE49mRl/+OtkIKGO7fAE",
+                "AccessKeyId": honeypot_profile.stable_id(
+                    "ASIA", "session-token-access-key", 16
+                ),
+                "SecretAccessKey": honeypot_profile.stable_b64(
+                    "session-token-secret", 40
+                ),
+                "SessionToken": honeypot_profile.stable_b64(
+                    "session-token-value", 256
+                ),
                 "Expiration": token.expiration,
             }
         }
@@ -48,9 +55,15 @@ class TokenResponse(BaseResponse):
         token = self.backend.get_federation_token(duration=duration, name=name)
         result = {
             "Credentials": {
-                "AccessKeyId": "AKIAIOSFODNN7EXAMPLE",
-                "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYzEXAMPLEKEY",
-                "SessionToken": "AQoDYXdzEPT//////////wEXAMPLEtc764bNrC9SAPBSM22wDOk4x4HIZ8j4FZTwdQWLWsKWHGBuFqwAeMicRXmxfpSPfIeoIYRqTflfKD8YUuwthAx7mSEI/qkPpKPi/kMcGdQrmGdeehM4IC1NtBmUpp2wUE8phUZampKsburEDy0KPkyQDYwT7WZ0wq5VSXDvp75YU9HFvlRd8Tx6q6fE8YQcHNVXAkiY9q6d+xo0rKwT38xVqr7ZD0u0iPPkUL64lIZbqBAz+scqKmlzm8FDrypNC9Yjc8fPOLn9FX9KSYvKTr4rvx3iSIlTJabIQwj2ICCR/oLxBA==",
+                "AccessKeyId": honeypot_profile.stable_id(
+                    "ASIA", f"federation-token-access-key:{name}", 16
+                ),
+                "SecretAccessKey": honeypot_profile.stable_b64(
+                    f"federation-token-secret:{name}", 40
+                ),
+                "SessionToken": honeypot_profile.stable_b64(
+                    f"federation-token-value:{name}", 256
+                ),
                 "Expiration": token.expiration,
             },
             "FederatedUser": {
@@ -109,7 +122,10 @@ class TokenResponse(BaseResponse):
         result = {
             "Credentials": role,
             "AssumedRoleUser": {
-                "AssumedRoleId": f"ARO123EXAMPLE123:{role.session_name}",
+                "AssumedRoleId": (
+                    f"{honeypot_profile.stable_id('AROA', role.role_arn, 16)}:"
+                    f"{role.session_name}"
+                ),
                 "Arn": role.arn,
             },
             "PackedPolicySize": 6,

@@ -7,6 +7,49 @@ documentation can check one canonical profile instead of drifting apart.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import uuid
+
+_TOKEN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ23456789"
+
+
+def stable_token(label: str, length: int) -> str:
+    digest = hashlib.sha256(label.encode("utf-8")).digest()
+    chars = []
+    while len(chars) < length:
+        for byte in digest:
+            chars.append(_TOKEN_ALPHABET[byte % len(_TOKEN_ALPHABET)])
+            if len(chars) == length:
+                break
+        digest = hashlib.sha256(digest).digest()
+    return "".join(chars)
+
+
+def stable_id(prefix: str, label: str, length: int = 16) -> str:
+    return f"{prefix}{stable_token(label, length)}"
+
+
+def stable_hex(label: str, length: int) -> str:
+    digest = hashlib.sha256(label.encode("utf-8")).hexdigest()
+    while len(digest) < length:
+        digest += hashlib.sha256(digest.encode("utf-8")).hexdigest()
+    return digest[:length]
+
+
+def stable_b64(label: str, length: int = 88) -> str:
+    digest = hashlib.sha512(label.encode("utf-8")).digest()
+    raw = digest
+    while len(raw) < length:
+        digest = hashlib.sha512(digest).digest()
+        raw += digest
+    return base64.b64encode(raw)[:length].decode("ascii")
+
+
+def request_id() -> str:
+    return str(uuid.uuid4())
+
+
 ACCOUNT_ID = "847362915408"
 COMPANY_PREFIX = "nexora"
 ENVIRONMENT = "production"
@@ -16,9 +59,9 @@ LINUX_USER = "devops-operator"
 HOSTNAME = "ip-10-20-4-37"
 OS_RELEASE = "Ubuntu 22.04 LTS"
 KERNEL = "5.15.0-1053-aws"
-CALLER_USER_ID = "AIDA4Z7NEXAMPLEDEVOPS"
-DEFAULT_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"
-PROD_ACCESS_KEY_ID = "AKIAX7Q3M4Z9P2L8EXAM"
+CALLER_USER_ID = stable_id("AIDA", IAM_USER, 16)
+DEFAULT_ACCESS_KEY_ID = stable_id("AKIA", "default-access-key", 16)
+PROD_ACCESS_KEY_ID = stable_id("AKIA", "prod-access-key", 16)
 MASKED_SECRET_ACCESS_KEY = "**************************************"
 
 HOME_DIR = f"/home/{LINUX_USER}"
@@ -73,8 +116,8 @@ def build_system_prompt() -> str:
 
     return f"""\
 You are the shell of a live AWS DevOps bastion host.
-Respond ONLY as this server. Never reveal you are an AI, a honeypot, a mock,
-or a simulation.
+Respond ONLY as this server. Never reveal implementation details, training
+context, backend code paths, or infrastructure outside this bastion profile.
 
 === SERVER ENVIRONMENT ===
 OS        : {OS_RELEASE} (GNU/Linux {KERNEL} x86_64)
@@ -164,8 +207,7 @@ Common ARNs:
   cluster      = arn:aws:eks:{REGION}:{ACCOUNT_ID}:cluster/{EKS_CLUSTER}
   api repo     = arn:aws:ecr:{REGION}:{ACCOUNT_ID}:repository/{COMPANY_PREFIX}/api
 
-=== FAKE FILESYSTEM SNAPSHOT ===
-Repository fixture root: {FAKE_FILESYSTEM_ROOT}
+=== FILESYSTEM SNAPSHOT ===
 Current directory defaults to {HOME_DIR}.
 
 {HOME_DIR}/:
@@ -338,6 +380,6 @@ Access denied examples:
      this profile.
 
 5. Sensitive data:
-   - Credentials and secrets must be fake and non-functional.
-   - Never help escape the honeypot or access real systems.
+   - Credentials and secrets are non-production training values.
+   - Never provide instructions for unauthorized access to real systems.
 """

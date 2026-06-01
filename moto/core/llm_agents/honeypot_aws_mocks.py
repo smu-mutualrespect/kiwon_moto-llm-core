@@ -50,7 +50,7 @@ def iam_list_users() -> dict[str, Any]:
                 "UserId": (
                     profile.CALLER_USER_ID
                     if user == profile.IAM_USER
-                    else f"AIDA4Z7NEXAMPLE{idx:05d}"
+                    else profile.stable_id("AIDA", f"iam-user:{user}", 16)
                 ),
                 "Arn": f"arn:aws:iam::{profile.ACCOUNT_ID}:user/{user}",
                 "CreateDate": f"2024-04-{10 + idx:02d}T07:18:31Z",
@@ -136,7 +136,9 @@ def eks_describe_cluster() -> dict[str, Any]:
                 ]
             },
             "status": "ACTIVE",
-            "certificateAuthority": {"data": "REDACTED_FAKE_CA_DATA"},
+            "certificateAuthority": {
+                "data": profile.stable_b64(f"eks-ca:{profile.EKS_CLUSTER}", 88)
+            },
             "platformVersion": "eks.18",
             "tags": {
                 "Name": profile.EKS_CLUSTER,
@@ -191,7 +193,7 @@ def lambda_list_functions() -> dict[str, Any]:
                 "Timeout": 30,
                 "MemorySize": 256,
                 "LastModified": f"2024-05-{18 + idx:02d}T08:13:4{idx}.000+0000",
-                "CodeSha256": "fakeSha256HashForNexoraLambdaOnly=",
+                "CodeSha256": profile.stable_b64(f"lambda:{name}", 44),
                 "Version": "$LATEST",
                 "TracingConfig": {"Mode": "PassThrough"},
                 "PackageType": "Zip",
@@ -228,6 +230,107 @@ def logs_describe_log_groups() -> dict[str, Any]:
     }
 
 
+def ssm_describe_instance_information() -> dict[str, Any]:
+    return {
+        "InstanceInformationList": [
+            {
+                "InstanceId": profile.INSTANCE_ID,
+                "PingStatus": "Online",
+                "LastPingDateTime": 1716710400.0,
+                "AgentVersion": "3.3.1310.0",
+                "IsLatestVersion": True,
+                "PlatformType": "Linux",
+                "PlatformName": "Ubuntu",
+                "PlatformVersion": "22.04",
+                "ResourceType": "EC2Instance",
+                "IPAddress": profile.PRIVATE_IP,
+                "ComputerName": profile.HOSTNAME,
+                "AssociationStatus": "Success",
+                "IamRole": profile.BASTION_ROLE_ARN.rsplit("/", 1)[-1],
+                "RegistrationDate": 1713655500.0,
+                "Name": f"{profile.COMPANY_PREFIX}-prod-bastion",
+            }
+        ]
+    }
+
+
+def secretsmanager_list_secrets() -> dict[str, Any]:
+    secrets = [
+        (
+            "prod/db/password",
+            "Primary RDS credential for backend-api",
+            f"arn:aws:kms:{profile.REGION}:{profile.ACCOUNT_ID}:key/"
+            f"{profile.stable_hex('kms:prod-secrets', 32)}",
+            True,
+        ),
+        (
+            "prod/payment/stripe",
+            "Payment provider API credential",
+            f"arn:aws:kms:{profile.REGION}:{profile.ACCOUNT_ID}:key/"
+            f"{profile.stable_hex('kms:payment-secrets', 32)}",
+            True,
+        ),
+        (
+            "prod/ci/ecr-token",
+            "CI token used by deployment automation",
+            f"arn:aws:kms:{profile.REGION}:{profile.ACCOUNT_ID}:key/"
+            f"{profile.stable_hex('kms:ci-secrets', 32)}",
+            False,
+        ),
+    ]
+    return {
+        "SecretList": [
+            {
+                "ARN": (
+                    f"arn:aws:secretsmanager:{profile.REGION}:{profile.ACCOUNT_ID}"
+                    f":secret:{name}-{profile.stable_token(name, 6)}"
+                ),
+                "Name": name,
+                "Description": description,
+                "KmsKeyId": kms_key,
+                "RotationEnabled": rotation_enabled,
+                "RotationLambdaARN": (
+                    f"arn:aws:lambda:{profile.REGION}:{profile.ACCOUNT_ID}"
+                    f":function:{profile.COMPANY_PREFIX}-secret-rotation"
+                ),
+                "RotationRules": {
+                    "AutomaticallyAfterDays": 30,
+                    "Duration": "2h",
+                    "ScheduleExpression": "rate(30 days)",
+                },
+                "LastChangedDate": 1715947200.0 + idx * 86400,
+                "LastAccessedDate": 1716681600.0 + idx * 86400,
+                "CreatedDate": 1713655500.0 + idx * 86400,
+                "Tags": [
+                    {"Key": "Environment", "Value": profile.ENVIRONMENT},
+                    {"Key": "Company", "Value": profile.COMPANY_PREFIX},
+                    {"Key": "Owner", "Value": "platform"},
+                ],
+                "SecretVersionsToStages": {
+                    profile.stable_hex(f"secret-version:{name}", 32): ["AWSCURRENT"]
+                },
+                "PrimaryRegion": profile.REGION,
+            }
+            for idx, (name, description, kms_key, rotation_enabled) in enumerate(secrets)
+        ]
+    }
+
+
+def validate_secret_resource_policy() -> dict[str, Any]:
+    return {
+        "PolicyValidationPassed": False,
+        "ValidationErrors": [
+            {
+                "CheckName": "PublicPolicyCheck",
+                "ErrorMessage": (
+                    "Policy allows broad access to secretsmanager:GetSecretValue. "
+                    "Restrict Principal and Resource before applying."
+                ),
+            }
+        ],
+    }
+
+
 def s3_list_buckets() -> dict[str, Any]:
     buckets = [
         "nexora-prod-logs",
@@ -241,7 +344,7 @@ def s3_list_buckets() -> dict[str, Any]:
     ]
     return {
         "Owner": {
-            "ID": "7d9f2c6a91d6472fa0a8nexorafakeowner",
+            "ID": profile.stable_hex("s3-canonical-user-id", 64),
             "DisplayName": profile.COMPANY_PREFIX,
         },
         "Buckets": [
@@ -323,7 +426,9 @@ def ec2_describe_instances() -> dict[str, Any]:
                             "Arn": profile.BASTION_ROLE_ARN
                             if idx == 0
                             else profile.EKS_ROLE_ARN,
-                            "Id": f"AIPANEXORA{idx:02d}EXAMPLE",
+                            "Id": profile.stable_id(
+                                "AIPA", f"instance-profile:{instance_id}", 17
+                            ),
                         },
                         "Tags": [
                             {"Key": "Name", "Value": name},

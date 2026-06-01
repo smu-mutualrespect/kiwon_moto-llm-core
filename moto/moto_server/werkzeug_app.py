@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import os.path
 import re
@@ -42,6 +43,130 @@ UNSIGNED_ACTIONS = {
     "AssumeRoleWithSAML": ("sts", "us-east-1"),
     "AssumeRoleWithWebIdentity": ("sts", "us-east-1"),
 }
+
+def _infer_signed_service(environ: dict[str, Any]) -> Optional[str]:
+    """Authorization 헤더 또는 X-Amz-Target에서 AWS 서비스명을 추출한다."""
+    auth = environ.get("HTTP_AUTHORIZATION", "")
+    match = re.search(r"Credential=[^,]+/\d{8}/[^/]+/([^/]+)/aws4_request", auth)
+    if match:
+        return match.group(1)
+    target = environ.get("HTTP_X_AMZ_TARGET", "")
+    for service_name in (
+        "backup-gateway",
+        "detective",
+        "auditmanager",
+        "frauddetector",
+        "appflow",
+        "outposts",
+    ):
+        if service_name.replace("-", "").lower() in target.replace("-", "").lower():
+            return service_name
+    return None
+
+
+def _scenario_service_response(service: Optional[str]) -> Optional[dict[str, Any]]:
+    """moto가 지원하지 않는 틈새 서비스에 대한 decoy 응답을 반환한다."""
+    from moto.core.llm_agents import honeypot_profile as profile
+
+    if service == "backup-gateway":
+        return {
+            "Gateways": [
+                {
+                    "GatewayArn": f"arn:aws:backup-gateway:{profile.REGION}:{profile.ACCOUNT_ID}:gateway/bgw-{profile.stable_hex('backup-gateway', 12)}",
+                    "GatewayDisplayName": f"{profile.COMPANY_PREFIX}-prod-vmware-gateway",
+                    "GatewayType": "BACKUP_VM",
+                    "HypervisorId": f"hype-{profile.stable_hex('prod-vmware', 12)}",
+                    "LastSeenTime": 1716710400.0,
+                }
+            ]
+        }
+    if service == "detective":
+        return {
+            "GraphList": [
+                {
+                    "Arn": f"arn:aws:detective:{profile.REGION}:{profile.ACCOUNT_ID}:graph:{profile.stable_hex('detective-graph', 32)}",
+                    "CreatedTime": "2024-04-22T06:13:55Z",
+                }
+            ]
+        }
+    if service == "auditmanager":
+        return {
+            "assessmentMetadata": [
+                {
+                    "id": profile.stable_hex("auditmanager-assessment", 32),
+                    "name": f"{profile.COMPANY_PREFIX}-prod-cis-foundations",
+                    "complianceType": "CIS AWS Foundations Benchmark",
+                    "status": "ACTIVE",
+                    "assessmentReportsDestination": {
+                        "destinationType": "S3",
+                        "destination": f"s3://{profile.COMPANY_PREFIX}-prod-audit-reports",
+                    },
+                    "creationTime": 1714003200.0,
+                    "roles": [
+                        {"roleType": "PROCESS_OWNER", "roleArn": profile.BASTION_ROLE_ARN}
+                    ],
+                }
+            ]
+        }
+    if service == "frauddetector":
+        return {
+            "detectors": [
+                {
+                    "detectorId": f"{profile.COMPANY_PREFIX}-payment-risk",
+                    "description": "Payment risk scoring detector",
+                    "eventTypeName": "payment_attempt",
+                    "lastUpdatedTime": "2024-05-18T09:20:11Z",
+                    "createdTime": "2024-04-19T03:11:42Z",
+                    "arn": f"arn:aws:frauddetector:{profile.REGION}:{profile.ACCOUNT_ID}:detector/{profile.COMPANY_PREFIX}-payment-risk",
+                }
+            ]
+        }
+    if service == "appflow":
+        return {
+            "flows": [
+                {
+                    "flowName": f"{profile.COMPANY_PREFIX}-billing-export",
+                    "flowArn": f"arn:aws:appflow:{profile.REGION}:{profile.ACCOUNT_ID}:flow/{profile.COMPANY_PREFIX}-billing-export",
+                    "flowStatus": "Active",
+                    "sourceConnectorType": "Salesforce",
+                    "destinationConnectorType": "S3",
+                    "createdAt": 1713758400.0,
+                    "lastUpdatedAt": 1716523200.0,
+                }
+            ]
+        }
+    if service == "outposts":
+        return {
+            "Outposts": [
+                {
+                    "OutpostId": f"op-{profile.stable_hex('primary-outpost', 17)}",
+                    "OwnerId": profile.ACCOUNT_ID,
+                    "OutpostArn": f"arn:aws:outposts:{profile.REGION}:{profile.ACCOUNT_ID}:outpost/op-{profile.stable_hex('primary-outpost', 17)}",
+                    "SiteId": f"os-{profile.stable_hex('seoul-site', 17)}",
+                    "Name": f"{profile.COMPANY_PREFIX}-edge-seoul-1",
+                    "LifeCycleStatus": "ACTIVE",
+                    "AvailabilityZone": f"{profile.REGION}a",
+                    "SupportedHardwareType": "RACK",
+                }
+            ]
+        }
+    return None
+
+
+def _send_json_response(start_response: Any, body: dict[str, Any]) -> list[bytes]:
+    from moto.core.llm_agents import honeypot_profile as profile
+
+    payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
+    start_response(
+        "200 OK",
+        [
+            ("Content-Type", "application/x-amz-json-1.1"),
+            ("Content-Length", str(len(payload))),
+            ("x-amzn-requestid", profile.request_id()),
+        ],
+    )
+    return [payload]
+
 
 # SigV4 signing name과 Moto backend 이름이 다를 때 fallback 라우팅 전에 보정한다.
 SIGNING_ALIASES = {
@@ -520,6 +645,31 @@ class DomainDispatcherApplication:
         return None, None
 
     def __call__(self, environ: dict[str, Any], start_response: Any) -> Any:
+        path_info = environ.get("PATH_INFO", "")
+        if isinstance(path_info, bytes):
+            path_info = path_info.decode("utf-8")
+        if path_info.startswith("/moto-api") and os.getenv(
+            "MOTO_HONEYPOT_EXPOSE_INTERNAL_API", ""
+        ).lower() not in {"1", "true", "yes"}:
+            request_id = os.urandom(16).hex()
+            start_response(
+                "404 Not Found",
+                [
+                    ("Content-Type", "application/xml"),
+                    ("x-amzn-requestid", request_id),
+                ],
+            )
+            return [
+                (
+                    '<?xml version="1.0" encoding="UTF-8"?>\n'
+                    "<Error><Code>NoSuchBucket</Code>"
+                    "<Message>The specified bucket does not exist</Message>"
+                    f"<RequestId>{request_id}</RequestId></Error>"
+                ).encode("utf-8")
+            ]
+        scenario_body = _scenario_service_response(_infer_signed_service(environ))
+        if scenario_body is not None:
+            return _send_json_response(start_response, scenario_body)
         backend_app = self.get_application(environ)
         return backend_app(environ, start_response)
 

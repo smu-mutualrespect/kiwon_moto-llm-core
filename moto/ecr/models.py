@@ -1328,7 +1328,7 @@ class ECRBackend(BaseBackend):
                         "severity": "HIGH",
                         "attributes": [
                             {"key": "package_version", "value": "9.9.9"},
-                            {"key": "package_name", "value": "moto_fake"},
+                            {"key": "package_name", "value": "openssl-libs"},
                             {
                                 "key": "CVSS2_VECTOR",
                                 "value": "AV:N/AC:L/Au:N/C:P/I:P/A:P",

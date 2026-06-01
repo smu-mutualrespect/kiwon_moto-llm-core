@@ -5,6 +5,7 @@ from moto.core.llm_agents import honeypot_profile as profile
 from moto.core.llm_agents.honeypot_aws_mocks import (
     access_denied_message,
     is_honeypot_access_key,
+    ssm_describe_instance_information,
 )
 from moto.core.responses import ActionResult, BaseResponse, EmptyResult
 
@@ -73,6 +74,11 @@ class SimpleSystemManagerResponse(BaseResponse):
         )
 
         return ActionResult(document)
+
+    def describe_instance_information(self) -> ActionResult:
+        if is_honeypot_access_key(self.get_access_key()):
+            return ActionResult(ssm_describe_instance_information())
+        raise NotImplementedError("DescribeInstanceInformation is not available")
 
     def describe_document(self) -> ActionResult:
         name = self._get_param("Name")
