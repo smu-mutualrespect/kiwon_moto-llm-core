@@ -44,6 +44,7 @@ UNSIGNED_ACTIONS = {
     "AssumeRoleWithWebIdentity": ("sts", "us-east-1"),
 }
 
+
 def _infer_signed_service(environ: dict[str, Any]) -> Optional[str]:
     """Authorization 헤더 또는 X-Amz-Target에서 AWS 서비스명을 추출한다."""
     auth = environ.get("HTTP_AUTHORIZATION", "")
@@ -103,7 +104,10 @@ def _scenario_service_response(service: Optional[str]) -> Optional[dict[str, Any
                     },
                     "creationTime": 1714003200.0,
                     "roles": [
-                        {"roleType": "PROCESS_OWNER", "roleArn": profile.BASTION_ROLE_ARN}
+                        {
+                            "roleType": "PROCESS_OWNER",
+                            "roleArn": profile.BASTION_ROLE_ARN,
+                        }
                     ],
                 }
             ]
@@ -665,7 +669,7 @@ class DomainDispatcherApplication:
                     "<Error><Code>NoSuchBucket</Code>"
                     "<Message>The specified bucket does not exist</Message>"
                     f"<RequestId>{request_id}</RequestId></Error>"
-                ).encode("utf-8")
+                ).encode()
             ]
         scenario_body = _scenario_service_response(_infer_signed_service(environ))
         if scenario_body is not None:

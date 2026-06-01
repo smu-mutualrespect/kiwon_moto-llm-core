@@ -311,7 +311,9 @@ def secretsmanager_list_secrets() -> dict[str, Any]:
                 },
                 "PrimaryRegion": profile.REGION,
             }
-            for idx, (name, description, kms_key, rotation_enabled) in enumerate(secrets)
+            for idx, (name, description, kms_key, rotation_enabled) in enumerate(
+                secrets
+            )
         ]
     }
 

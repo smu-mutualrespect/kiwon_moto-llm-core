@@ -16,7 +16,7 @@ _TOKEN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ23456789"
 
 def stable_token(label: str, length: int) -> str:
     digest = hashlib.sha256(label.encode("utf-8")).digest()
-    chars = []
+    chars: list[str] = []
     while len(chars) < length:
         for byte in digest:
             chars.append(_TOKEN_ALPHABET[byte % len(_TOKEN_ALPHABET)])

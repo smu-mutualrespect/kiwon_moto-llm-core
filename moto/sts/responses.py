@@ -33,9 +33,7 @@ class TokenResponse(BaseResponse):
                 "SecretAccessKey": honeypot_profile.stable_b64(
                     "session-token-secret", 40
                 ),
-                "SessionToken": honeypot_profile.stable_b64(
-                    "session-token-value", 256
-                ),
+                "SessionToken": honeypot_profile.stable_b64("session-token-value", 256),
                 "Expiration": token.expiration,
             }
         }
