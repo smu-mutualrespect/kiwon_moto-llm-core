@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import re
 
+from moto.core.llm_agents import honeypot_profile
 from moto.core.llm_agents.agent import handle_aws_request
 from moto.core.llm_agents.runtime import (
     DEFAULT_OUTPUT,
+    build_agent_prompt,
     call_gpt_api_with_meta,
     parse_agent_output,
 )
@@ -14,6 +16,7 @@ from moto.core.llm_agents.runtime.tool_executor import execute_agent_tool_reques
 from moto.core.llm_agents.runtime.tool_registry import get_available_tool_names
 from moto.core.llm_agents.shape_adapter import adapt_response_plan
 from moto.core.llm_agents.tools.planning_tools import build_response_plan_tool
+from moto.core.llm_agents.tools.report_tools import _build_report_prompt
 from moto.core.llm_agents.tools.render_tools import serialize_response_tool
 from moto.core.llm_agents.tools.request_tools import normalize_request_tool
 from moto.core.llm_agents.tools.state_tools import (
@@ -285,6 +288,28 @@ def test_tool_registry_lists_only_agent_callable_tools() -> None:
     assert "render_tools.serialize_response_tool" not in tools
 
 
+def test_report_prompt_uses_first_action_timestamp_when_state_start_missing() -> None:
+    prompt = _build_report_prompt(
+        session_id="AKIAREPORTTEST",
+        state={},
+        action_log=[
+            {
+                "timestamp": "2026-05-27T18:43:56Z",
+                "service": "sts",
+                "operation": "GetCallerIdentity",
+                "phase": "recon",
+                "source": "unit_test",
+            }
+        ],
+        timing={},
+        iocs={},
+        ttp_map={},
+    )
+
+    assert "- 세션 시작: 2026-05-27T18:43:56Z" in prompt
+    assert "- 세션 시작: unknown" not in prompt
+
+
 def test_validator_blocks_public_url() -> None:
     canonical = normalize_request_tool(
         service="ssm",
@@ -493,6 +518,169 @@ def test_agent_write_invalidates_cache_and_routes_only_affected_reads() -> None:
     assert updated["response_cache"] == {}
     assert has_cached_agent_response_tool(session_id, "ec2", "DescribeInstances")
     assert not has_cached_agent_response_tool(session_id, "ec2", "DescribeImages")
+
+
+def test_honeypot_profile_state_is_seeded_for_profile_access_key() -> None:
+    session_id = honeypot_profile.DEFAULT_ACCESS_KEY_ID
+    headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            f"Credential={session_id}/20260522/us-east-1/sts/aws4_request"
+        )
+    }
+
+    state = get_world_state_tool(session_id, headers)
+
+    assert state["persona"] == "nexora-prod-devops-bastion"
+    assert state["region"] == honeypot_profile.REGION
+    assert state["consistency_locks"]["account_id"] == honeypot_profile.ACCOUNT_ID
+    assert state["honeypot_profile"]["iam_user"] == honeypot_profile.IAM_USER
+
+
+def test_agent_prompt_includes_honeypot_profile_context() -> None:
+    session_id = honeypot_profile.PROD_ACCESS_KEY_ID
+    headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            f"Credential={session_id}/20260522/us-east-1/backup-gateway/aws4_request"
+        )
+    }
+    canonical = normalize_request_tool(
+        service="backup-gateway",
+        action="ListGateways",
+        url="https://backup-gateway.us-east-1.amazonaws.com/",
+        headers=headers,
+        body="{}",
+    )
+    state = get_world_state_tool(session_id, headers)
+
+    prompt = build_agent_prompt(canonical, state, "", "unit test", "unit_test")
+
+    assert honeypot_profile.ACCOUNT_ID in prompt
+    assert honeypot_profile.IAM_USER in prompt
+    assert honeypot_profile.EKS_CLUSTER in prompt
+
+
+def test_fallback_profile_overrides_backup_gateway(monkeypatch) -> None:
+    session_id = honeypot_profile.DEFAULT_ACCESS_KEY_ID
+    headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            f"Credential={session_id}/20260522/us-east-1/backup-gateway/aws4_request"
+        )
+    }
+    monkeypatch.setenv("MOTO_LLM_OFFLINE_STUB", "1")
+
+    response_body = handle_aws_request(
+        service="backup-gateway",
+        action="ListGateways",
+        url="https://backup-gateway.us-east-1.amazonaws.com/",
+        headers=headers,
+        body="{}",
+        reason="unit test",
+        source="unit_test",
+    )
+
+    parsed = json.loads(response_body)
+    gateway = parsed["Gateways"][0]
+    assert gateway["GatewayDisplayName"] == "nexora-prod-backup-gateway"
+    assert honeypot_profile.ACCOUNT_ID in gateway["GatewayArn"]
+    assert "123456789012" not in response_body
+
+
+def test_fallback_profile_overrides_secret_policy_validation(monkeypatch) -> None:
+    session_id = honeypot_profile.DEFAULT_ACCESS_KEY_ID
+    headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            f"Credential={session_id}/20260522/us-east-1/secretsmanager/aws4_request"
+        ),
+        "Content-Type": "application/x-amz-json-1.1",
+    }
+    monkeypatch.setenv("MOTO_LLM_OFFLINE_STUB", "1")
+
+    response_body = handle_aws_request(
+        service="secretsmanager",
+        action="ValidateResourcePolicy",
+        url="https://secretsmanager.us-east-1.amazonaws.com/",
+        headers=headers,
+        body=json.dumps(
+            {
+                "SecretId": "prod/db/password",
+                "ResourcePolicy": (
+                    '{"Version":"2012-10-17","Statement":[{"Effect":"Allow",'
+                    '"Principal":"*","Action":"secretsmanager:GetSecretValue",'
+                    '"Resource":"*"}]}'
+                ),
+            }
+        ),
+        reason="unit test",
+        source="unit_test",
+    )
+
+    parsed = json.loads(response_body)
+    assert parsed["PolicyValidationPassed"] is False
+    assert parsed["ValidationErrors"][0]["CheckName"] == "SECURITY_WARNING"
+
+
+def test_fallback_profile_overrides_iam_context_keys(monkeypatch) -> None:
+    session_id = honeypot_profile.DEFAULT_ACCESS_KEY_ID
+    headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            f"Credential={session_id}/20260522/us-east-1/iam/aws4_request"
+        )
+    }
+    monkeypatch.setenv("MOTO_LLM_OFFLINE_STUB", "1")
+
+    response_body = handle_aws_request(
+        service="iam",
+        action="GetContextKeysForPrincipalPolicy",
+        url="https://iam.amazonaws.com/",
+        headers=headers,
+        body=(
+            "Action=GetContextKeysForPrincipalPolicy&"
+            "PolicySourceArn=arn:aws:iam::123456789012:user/victim-admin"
+        ),
+        reason="unit test",
+        source="unit_test",
+    )
+
+    assert response_body.count("aws:RequestedRegion") == 1
+    assert "aws:PrincipalArn" in response_body
+
+
+def test_report_prompt_includes_honeypot_profile_context() -> None:
+    session_id = honeypot_profile.DEFAULT_ACCESS_KEY_ID
+    headers = {
+        "Authorization": (
+            "AWS4-HMAC-SHA256 "
+            f"Credential={session_id}/20260522/us-east-1/sts/aws4_request"
+        )
+    }
+    state = get_world_state_tool(session_id, headers)
+    prompt = _build_report_prompt(
+        session_id,
+        state,
+        [
+            {
+                "timestamp": "2026-05-22T00:00:00Z",
+                "phase": "recon",
+                "service": "sts",
+                "operation": "GetCallerIdentity",
+                "source": "moto_native",
+                "new_assets": [],
+            }
+        ],
+        {},
+        {},
+        {},
+    )
+
+    assert "허니팟 가상 회사 프로필" in prompt
+    assert honeypot_profile.COMPANY_PREFIX in prompt
+    assert honeypot_profile.IAM_USER in prompt
+    assert honeypot_profile.EKS_CLUSTER in prompt
 
 
 def test_moto_native_baseline_applies_resource_state_patches() -> None:

@@ -11,6 +11,8 @@ response = EKSResponse()
 url_paths = {
     "{0}/clusters$": response.dispatch,
     "{0}/clusters/(?P<name>[^/]+)$": response.dispatch,
+    "{0}/clusters/(?P<name>[^/]+)/addons$": response.dispatch,
+    "{0}/addons/supported-versions$": response.dispatch,
     "{0}/clusters/(?P<name>[^/]+)/node-groups$": response.dispatch,
     "{0}/clusters/(?P<name>[^/]+)/node-groups/(?P<nodegroupName>[^/]+)$": response.dispatch,
     "{0}/clusters/(?P<name>[^/]+)/node-groups/(?P<nodegroupName>[^/]+)/update-config$": response.dispatch,

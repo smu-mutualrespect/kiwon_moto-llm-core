@@ -1,6 +1,14 @@
 from urllib.parse import unquote
 
+from moto.core.exceptions import JsonRESTError
 from moto.core.responses import ActionResult, BaseResponse, EmptyResult
+from moto.core.llm_agents.honeypot_aws_mocks import (
+    access_denied_message,
+    eks_describe_cluster,
+    eks_list_clusters,
+    is_honeypot_access_key,
+)
+from moto.core.llm_agents import honeypot_profile as profile
 
 from .models import EKSBackend, eks_backends
 
@@ -107,6 +115,10 @@ class EKSResponse(BaseResponse):
 
     def describe_cluster(self) -> ActionResult:
         name = self._get_param("name")
+        if is_honeypot_access_key(self.get_access_key()):
+            cluster = eks_describe_cluster()["cluster"]
+            if name == cluster["name"]:
+                return ActionResult({"cluster": cluster})
 
         cluster = self.eks_backend.describe_cluster(name=name)
 
@@ -174,6 +186,9 @@ class EKSResponse(BaseResponse):
         return ActionResult({"update": update})
 
     def list_clusters(self) -> ActionResult:
+        if is_honeypot_access_key(self.get_access_key()):
+            return ActionResult(eks_list_clusters())
+
         max_results = self._get_int_param("maxResults", DEFAULT_MAX_RESULTS)
         next_token = self._get_param("nextToken", DEFAULT_NEXT_TOKEN)
 
@@ -182,6 +197,70 @@ class EKSResponse(BaseResponse):
         )
 
         return ActionResult({"clusters": clusters, "nextToken": next_token})
+
+    def list_addons(self) -> ActionResult:
+        if is_honeypot_access_key(self.get_access_key()):
+            return ActionResult(
+                {
+                    "addons": ["vpc-cni", "coredns", "kube-proxy", "aws-ebs-csi-driver"],
+                    "nextToken": "",
+                }
+            )
+
+        return ActionResult({"addons": [], "nextToken": ""})
+
+    def describe_addon_versions(self) -> ActionResult:
+        if is_honeypot_access_key(self.get_access_key()):
+            return ActionResult(
+                {
+                    "addons": [
+                        {
+                            "addonName": "vpc-cni",
+                            "type": "networking",
+                            "addonVersions": [
+                                {
+                                    "addonVersion": "v1.16.4-eksbuild.2",
+                                    "architecture": ["amd64"],
+                                    "compatibilities": [
+                                        {
+                                            "clusterVersion": "1.28",
+                                            "platformVersions": ["eks.18"],
+                                            "defaultVersion": True,
+                                        }
+                                    ],
+                                    "requiresConfiguration": False,
+                                    "requiresIamPermissions": True,
+                                }
+                            ],
+                            "publisher": "eks",
+                            "owner": "aws",
+                        },
+                        {
+                            "addonName": "aws-ebs-csi-driver",
+                            "type": "storage",
+                            "addonVersions": [
+                                {
+                                    "addonVersion": "v1.28.0-eksbuild.1",
+                                    "architecture": ["amd64"],
+                                    "compatibilities": [
+                                        {
+                                            "clusterVersion": "1.28",
+                                            "platformVersions": ["eks.18"],
+                                            "defaultVersion": True,
+                                        }
+                                    ],
+                                    "requiresConfiguration": False,
+                                    "requiresIamPermissions": True,
+                                }
+                            ],
+                            "publisher": "eks",
+                            "owner": "aws",
+                        },
+                    ]
+                }
+            )
+
+        return ActionResult({"addons": []})
 
     def list_fargate_profiles(self) -> ActionResult:
         cluster_name = self._get_param("name")
@@ -209,6 +288,14 @@ class EKSResponse(BaseResponse):
 
     def delete_cluster(self) -> ActionResult:
         name = self._get_param("name")
+        if is_honeypot_access_key(self.get_access_key()):
+            raise JsonRESTError(
+                "AccessDeniedException",
+                access_denied_message(
+                    "eks:DeleteCluster",
+                    f"arn:aws:eks:{self.region}:{profile.ACCOUNT_ID}:cluster/{name}",
+                ),
+            )
 
         cluster = self.eks_backend.delete_cluster(name=name)
 

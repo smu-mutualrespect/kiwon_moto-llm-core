@@ -1,3 +1,4 @@
+.env
 moto*.egg-info/*
 dist/*
 .cache

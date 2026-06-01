@@ -1,0 +1,7 @@
+2026-05-24 10:25:09 backup.sh: start user=devops-operator env=production source=/data bucket=s3://nexora-backup-prod/daily region=us-east-1
+2026-05-24 10:25:11 backup.sh: scanning /data/app state=ok files=42
+2026-05-24 10:25:14 backup.sh: aws s3 sync /data s3://nexora-backup-prod/daily --region us-east-1 transferred=42 skipped=318
+2026-05-24 10:25:15 backup.sh: completed bucket=s3://nexora-backup-prod/daily account=847362915408
+2026-05-25 02:00:01 backup.sh: start user=devops-operator env=production source=/data bucket=s3://nexora-backup-prod/daily region=us-east-1
+2026-05-25 02:00:09 backup.sh: aws s3 sync /data s3://nexora-backup-prod/daily --region us-east-1 transferred=7 skipped=353
+2026-05-25 02:00:10 backup.sh: completed bucket=s3://nexora-backup-prod/daily account=847362915408

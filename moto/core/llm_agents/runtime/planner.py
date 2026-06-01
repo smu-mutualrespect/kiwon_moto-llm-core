@@ -73,6 +73,12 @@ def _build_compact_agent_prompt(
         world_state.get("consistency_locks", {}).get("account_id", "123456789012")
     )
     region = str(world_state.get("region", "us-east-1"))
+    profile = world_state.get("honeypot_profile") or {}
+    profile_block = (
+        json.dumps(profile, ensure_ascii=False, separators=(",", ":"))
+        if isinstance(profile, dict) and profile
+        else "{}"
+    )
     latest_observation_block = latest_observation or "None"
     tool_block = json.dumps(
         available_tools or [], ensure_ascii=False, separators=(",", ":")
@@ -83,7 +89,8 @@ def _build_compact_agent_prompt(
         f"svc={canonical.service} op={canonical.operation} style={canonical.probe_style} "
         f"params={json.dumps(canonical.request_params, default=str, separators=(',', ':'))} "
         f"ids={json.dumps(canonical.target_identifiers, default=str, separators=(',', ':'))} "
-        f"acct={account_id} region={region} reason={reason} source={source} "
+        f"acct={account_id} region={region} profile={profile_block} "
+        f"reason={reason} source={source} "
         f"history={json.dumps(history_context[:400], ensure_ascii=False, separators=(',', ':'))} "
         f"tools={tool_block} LATEST_OBSERVATION={latest_observation_block}. "
         'OUTPUT_JSON_SCHEMA: {"intent_phase":"recon","response_posture":"sparse|normal","error_mode":"none|access_denied|throttling|not_found",'

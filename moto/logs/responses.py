@@ -4,6 +4,10 @@ from collections.abc import Callable
 from typing import Any, Optional
 
 from moto.core.responses import BaseResponse
+from moto.core.llm_agents.honeypot_aws_mocks import (
+    is_honeypot_access_key,
+    logs_describe_log_groups,
+)
 
 from .exceptions import InvalidParameterException
 from .models import LogsBackend, logs_backends
@@ -165,6 +169,9 @@ class LogsResponse(BaseResponse):
         return ""
 
     def describe_log_groups(self) -> str:
+        if is_honeypot_access_key(self.get_access_key()):
+            return json.dumps(logs_describe_log_groups())
+
         log_group_name_prefix = self._get_param("logGroupNamePrefix")
         next_token = self._get_param("nextToken")
         limit = self._get_param("limit", 50)

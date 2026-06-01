@@ -1,0 +1,15 @@
+2026-05-24 09:57:58 ip-10-20-4-37 systemd[1]: Started Session 81 of User devops-operator.
+2026-05-24 09:58:05 ip-10-20-4-37 amazon-ssm-agent[742]: [ssm-agent-worker] successfully registered instance i-0f6a7c2e91b4d8a63 in us-east-1
+2026-05-24 10:03:41 ip-10-20-4-37 systemd[1]: Stopping A high performance web server and a reverse proxy server...
+2026-05-24 10:03:42 ip-10-20-4-37 systemd[1]: Started A high performance web server and a reverse proxy server.
+2026-05-24 10:04:01 ip-10-20-4-37 systemd[1]: Stopping Nexora backend API service...
+2026-05-24 10:04:04 ip-10-20-4-37 systemd[1]: Started Nexora backend API service.
+2026-05-24 10:12:33 ip-10-20-4-37 dockerd[921]: Pulling image 847362915408.dkr.ecr.us-east-1.amazonaws.com/nexora-backend-api:latest
+2026-05-24 10:12:47 ip-10-20-4-37 dockerd[921]: Container nexora-backend-api restarted by docker-compose project devops-operator
+2026-05-24 10:12:51 ip-10-20-4-37 systemd[1]: docker.service: nexora-backend-api healthcheck passed
+2026-05-24 10:18:12 ip-10-20-4-37 kubelet-proxy[1931]: kubectl rollout restart deployment/backend-api -n prod submitted to nexora-prod-eks
+2026-05-24 10:25:09 ip-10-20-4-37 cron[1543]: (devops-operator) CMD (/home/devops-operator/backup.sh >> /home/devops-operator/logs/backup.log 2>&1)
+2026-05-24 10:25:15 ip-10-20-4-37 aws-cli[2614]: s3 sync /data s3://nexora-backup-prod/daily --region us-east-1 completed objects=42
+2026-05-25 08:18:10 ip-10-20-4-37 dockerd[921]: Container nexora-backend-api restarted via docker restart
+2026-05-25 08:18:12 ip-10-20-4-37 nginx[1312]: signal process started: reloading configuration
+2026-05-26 08:15:34 ip-10-20-4-37 amazon-ssm-agent[742]: [HealthCheck] instance reachable, account=847362915408 region=us-east-1

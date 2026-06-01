@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+  namespace: prod
+  labels:
+    app: backend-api
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: backend-api
+  template:
+    metadata:
+      labels:
+        app: backend-api
+    spec:
+      serviceAccountName: backend-api
+      containers:
+      - name: api
+        image: 847362915408.dkr.ecr.us-east-1.amazonaws.com/nexora-backend-api:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: ENVIRONMENT
+          value: production
+        - name: AWS_REGION
+          value: us-east-1

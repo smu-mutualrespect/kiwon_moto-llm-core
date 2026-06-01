@@ -223,7 +223,7 @@ def _start_debug_server() -> None:
                 result[sid].update(
                     {
                         "reported_at": summary.get("reported_at"),
-                        "report_path": summary.get("report_path"),
+                        "has_report": bool(summary.get("report_path")),
                     }
                 )
         # 보고 완료 세션 (메모리에서 해제됐지만 요약은 보존)
@@ -231,7 +231,9 @@ def _start_debug_server() -> None:
             if sid not in result:
                 result[sid] = {
                     "status": "reported",
-                    **summary,
+                    "action_count": summary.get("action_count"),
+                    "reported_at": summary.get("reported_at"),
+                    "has_report": bool(summary.get("report_path")),
                 }
         return Response(
             _json.dumps(result, ensure_ascii=False, indent=2),

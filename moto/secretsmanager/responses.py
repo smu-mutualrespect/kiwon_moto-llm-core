@@ -1,6 +1,11 @@
 import json
 from typing import Any
 
+from moto.core.exceptions import JsonRESTError
+from moto.core.llm_agents.honeypot_aws_mocks import (
+    access_denied_message,
+    is_honeypot_access_key,
+)
 from moto.core.responses import BaseResponse
 from moto.secretsmanager.exceptions import (
     InvalidParameterException,
@@ -42,6 +47,11 @@ class SecretsManagerResponse(BaseResponse):
 
     def get_secret_value(self) -> str:
         secret_id = self._get_param("SecretId")
+        if is_honeypot_access_key(self.get_access_key()):
+            raise JsonRESTError(
+                "AccessDeniedException",
+                access_denied_message("secretsmanager:GetSecretValue"),
+            )
         version_id = self._get_param("VersionId")
         version_stage = self._get_param("VersionStage")
         value = self.backend.get_secret_value(

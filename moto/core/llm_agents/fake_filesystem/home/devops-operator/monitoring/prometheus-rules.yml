@@ -1,0 +1,17 @@
+groups:
+- name: nexora-prod-api
+  rules:
+  - alert: NexoraApiHigh5xx
+    expr: sum(rate(nginx_ingress_controller_requests{namespace="prod",status=~"5.."}[5m])) > 5
+    for: 10m
+    labels:
+      severity: page
+      environment: production
+    annotations:
+      summary: nexora-api 5xx rate is elevated
+      runbook: /home/devops-operator/ops/incident-2024-05-18.md
+  - alert: NexoraApiPodRestarting
+    expr: increase(kube_pod_container_status_restarts_total{namespace="prod",container="api"}[15m]) > 2
+    for: 5m
+    labels:
+      severity: warning

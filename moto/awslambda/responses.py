@@ -5,6 +5,10 @@ from typing import Any, Union
 from urllib.parse import unquote
 
 from moto.core.responses import TYPE_RESPONSE, ActionResult, BaseResponse
+from moto.core.llm_agents.honeypot_aws_mocks import (
+    is_honeypot_access_key,
+    lambda_list_functions,
+)
 from moto.utilities.aws_headers import amz_crc32
 from moto.utilities.utils import ARN_PARTITION_REGEX
 
@@ -101,6 +105,9 @@ class LambdaResponse(BaseResponse):
         return 202, response_headers, payload
 
     def list_functions(self) -> str:
+        if is_honeypot_access_key(self.get_access_key()):
+            return json.dumps(lambda_list_functions())
+
         querystring = self.querystring
         func_version = querystring.get("FunctionVersion", [None])[0]
         result: dict[str, list[dict[str, Any]]] = {"Functions": []}

@@ -1,0 +1,9 @@
+2026-05-24 10:12:20 deploy.sh: start user=devops-operator env=production account=847362915408 region=us-east-1 service=backend-api
+2026-05-24 10:12:27 deploy.sh: aws ecr get-login-password --region us-east-1 completed registry=847362915408.dkr.ecr.us-east-1.amazonaws.com
+2026-05-24 10:12:33 deploy.sh: docker pull 847362915408.dkr.ecr.us-east-1.amazonaws.com/nexora-backend-api:latest success
+2026-05-24 10:12:47 deploy.sh: docker restart nexora-backend-api completed
+2026-05-24 10:12:51 deploy.sh: docker-compose up -d backend-api completed
+2026-05-24 10:13:04 deploy.sh: health check http://127.0.0.1:8080/internal/ready status=200
+2026-05-24 10:18:12 deploy.sh: kubectl rollout restart deployment/backend-api -n prod requested cluster=nexora-prod-eks
+2026-05-24 10:19:44 deploy.sh: kubectl rollout status deployment/backend-api -n prod completed
+2026-05-24 10:20:03 deploy.sh: complete image=847362915408.dkr.ecr.us-east-1.amazonaws.com/nexora-backend-api:latest
