@@ -1,14 +1,14 @@
 from urllib.parse import unquote
 
 from moto.core.exceptions import JsonRESTError
-from moto.core.responses import ActionResult, BaseResponse, EmptyResult
+from moto.core.llm_agents import honeypot_profile as profile
 from moto.core.llm_agents.honeypot_aws_mocks import (
     access_denied_message,
     eks_describe_cluster,
     eks_list_clusters,
     is_honeypot_access_key,
 )
-from moto.core.llm_agents import honeypot_profile as profile
+from moto.core.responses import ActionResult, BaseResponse, EmptyResult
 
 from .models import EKSBackend, eks_backends
 
@@ -202,7 +202,12 @@ class EKSResponse(BaseResponse):
         if is_honeypot_access_key(self.get_access_key()):
             return ActionResult(
                 {
-                    "addons": ["vpc-cni", "coredns", "kube-proxy", "aws-ebs-csi-driver"],
+                    "addons": [
+                        "vpc-cni",
+                        "coredns",
+                        "kube-proxy",
+                        "aws-ebs-csi-driver",
+                    ],
                     "nextToken": "",
                 }
             )

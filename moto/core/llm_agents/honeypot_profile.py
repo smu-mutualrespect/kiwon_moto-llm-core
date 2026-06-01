@@ -23,9 +23,7 @@ MASKED_SECRET_ACCESS_KEY = "**************************************"
 
 HOME_DIR = f"/home/{LINUX_USER}"
 DEFAULT_CWD = HOME_DIR
-FAKE_FILESYSTEM_ROOT = (
-    f"moto/core/llm_agents/fake_filesystem/home/{LINUX_USER}"
-)
+FAKE_FILESYSTEM_ROOT = f"moto/core/llm_agents/fake_filesystem/home/{LINUX_USER}"
 PRIVATE_IP = "10.20.4.37"
 PUBLIC_IP = "3.88.214.106"
 INSTANCE_ID = "i-0f6a7c2e91b4d8a63"

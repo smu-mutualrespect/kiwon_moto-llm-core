@@ -3,11 +3,11 @@ import time
 from base64 import b64encode
 from datetime import datetime
 
-from moto.core.responses import ActionResult, BaseResponse, EmptyResult
 from moto.core.llm_agents.honeypot_aws_mocks import (
     ecr_describe_repositories,
     is_honeypot_access_key,
 )
+from moto.core.responses import ActionResult, BaseResponse, EmptyResult
 
 from .models import ECRBackend, ecr_backends
 

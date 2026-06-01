@@ -1,12 +1,12 @@
 from copy import deepcopy
 from typing import Any
 
-from moto.core.responses import ActionResult, EmptyResult
 from moto.core.llm_agents.honeypot_aws_mocks import (
     access_denied_message,
     ec2_describe_instances,
     is_honeypot_access_key,
 )
+from moto.core.responses import ActionResult, EmptyResult
 from moto.core.types import Base64EncodedString
 from moto.core.utils import camelcase_to_underscores
 from moto.ec2.exceptions import (

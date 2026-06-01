@@ -1,11 +1,11 @@
 from typing import Any
 
 from moto.core.exceptions import JsonRESTError
+from moto.core.llm_agents import honeypot_profile as profile
 from moto.core.llm_agents.honeypot_aws_mocks import (
     access_denied_message,
     is_honeypot_access_key,
 )
-from moto.core.llm_agents import honeypot_profile as profile
 from moto.core.responses import ActionResult, BaseResponse, EmptyResult
 
 from .exceptions import ParameterNotFound, ValidationException

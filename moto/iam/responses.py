@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from moto.core.llm_agents import honeypot_profile as profile
 from moto.core.llm_agents.honeypot_aws_mocks import (
     access_denied_message,
     iam_get_user,
-    iam_list_users,
     iam_list_service_specific_credentials,
+    iam_list_users,
     is_honeypot_access_key,
 )
-from moto.core.llm_agents import honeypot_profile as profile
 from moto.core.responses import ActionResult, BaseResponse, EmptyResult
 from moto.core.serialize import never_return, return_if_not_empty, url_encode
 

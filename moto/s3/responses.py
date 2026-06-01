@@ -11,15 +11,15 @@ import xmltodict
 
 from moto import settings
 from moto.core.common_types import TYPE_RESPONSE
-from moto.core.mime_types import APP_XML
 from moto.core.exceptions import RESTError
-from moto.core.responses import ActionResult, BaseResponse, EmptyResult
 from moto.core.llm_agents.honeypot_aws_mocks import (
     access_denied_message,
     is_honeypot_access_key,
     s3_list_buckets,
     sensitive_s3_buckets,
 )
+from moto.core.mime_types import APP_XML
+from moto.core.responses import ActionResult, BaseResponse, EmptyResult
 from moto.core.utils import (
     ALT_DOMAIN_SUFFIXES,
     ensure_boolean,
