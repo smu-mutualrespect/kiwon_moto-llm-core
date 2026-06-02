@@ -29,7 +29,7 @@ _MARKDOWN_REPORT_DIR = _REPORT_DIR / "markdown"
 _ARTIFACT_REPORT_DIR = _REPORT_DIR / "artifacts"
 _IDLE_SECONDS = float(os.getenv("MOTO_HONEYPOT_SESSION_TIMEOUT", "300"))
 _REPORT_MODEL = os.getenv("MOTO_LLM_REPORT_MODEL") or None
-_REPORT_MAX_TOKENS = int(os.getenv("MOTO_LLM_REPORT_MAX_TOKENS", "5000"))
+_REPORT_MAX_TOKENS = int(os.getenv("MOTO_LLM_REPORT_MAX_TOKENS", "16000"))
 
 # 작업(operation) → MITRE ATT&CK 기법 ID 정적 매핑
 # ref: https://attack.mitre.org/matrices/enterprise/cloud/
@@ -568,7 +568,9 @@ def _build_report_prompt(
             f"[{i:02d}] {entry['timestamp']} | [{entry['phase']}] "
             f"{entry['service']}:{entry['operation']} | 출처={entry['source']}"
         )
-        if "status_code" in entry:
+        if "error_code" in entry:
+            line += f" | 결과={entry['error_code']} (HTTP {entry.get('status_code')})"
+        elif entry.get("status_code", 200) >= 400:
             line += f" | 상태=HTTP {entry.get('status_code')}"
         if assets:
             line += f" | 발견자산={', '.join(str(a) for a in assets[:2])}"
@@ -608,7 +610,7 @@ def _build_report_prompt(
 - TTP 표는 제공된 매핑 데이터만으로 채우고, 매핑이 없는 작업은 TTP 표에 포함하지 마세요.
 - `sts:GetCallerIdentity`는 자격증명 확인 신호로만 다루고, 차단/제한 권고 대상으로 쓰지 마세요.
 - 허니팟의 가상 계정 ID와 관찰된 ARN 내부 계정 ID가 다를 수 있습니다. 이 경우 둘을 억지로 일치시키거나 실제 계정 소유로 단정하지 말고, "관찰된 식별자"로만 표현하세요.
-- 타임라인에 `상태=HTTP 4xx/5xx`가 있는 작업은 성공한 행위가 아니라 실패한 시도입니다. 실패한 IAM mutation이나 secret 조회를 "생성했다", "획득했다"로 쓰지 말고 "시도했으나 거부/실패했다"로 표현하세요.
+- 타임라인에 `결과=AccessDenied` 또는 `상태=HTTP 4xx/5xx`가 있는 작업은 성공한 행위가 아니라 실패한 시도입니다. `결과=AccessDenied`는 권한 부족으로 거부된 것이며, 실패한 IAM mutation이나 secret 조회를 "생성했다", "획득했다"로 쓰지 말고 "시도했으나 거부됐다" 또는 "시도했으나 실패했다"로 표현하세요.
 - 보고서에는 아래 [허니팟 가상 회사 프로필]의 회사, 계정, 사용자, 주요 자산 이름을 반영하세요.
 
 ══════════════ 관찰 데이터 ══════════════

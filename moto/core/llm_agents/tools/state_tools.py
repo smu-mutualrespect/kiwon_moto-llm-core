@@ -21,6 +21,27 @@ _reported_action_counts: dict[str, int] = {}
 _session_summary: dict[str, dict[str, Any]] = {}  # 보고 완료 세션의 요약 정보
 
 
+def _extract_error_code(response_body: str, status_code: int) -> str | None:
+    """응답 바디에서 AWS 오류 코드를 추출한다 (XML/JSON 모두 지원)."""
+    if status_code < 400:
+        return None
+    try:
+        parsed = json.loads(response_body)
+        # JSON 형식: {"__type": "AccessDeniedException", ...} 또는 {"code": "AccessDenied"}
+        raw = parsed.get("__type") or parsed.get("code") or parsed.get("Code") or ""
+        if raw:
+            return raw.split("#")[
+                -1
+            ]  # com.amazonaws...#AccessDeniedException → AccessDeniedException
+    except (json.JSONDecodeError, AttributeError):
+        pass
+    # XML 형식: <Code>AccessDenied</Code>
+    m = re.search(r"<Code>([^<]+)</Code>", response_body)
+    if m:
+        return m.group(1)
+    return None
+
+
 def _append_action_log(
     session_id: str,
     service: str,
@@ -30,6 +51,7 @@ def _append_action_log(
     source: str,
     *,
     status_code: int = 200,
+    error_code: str | None = None,
     new_assets: list[str] | None = None,
 ) -> None:
     entry: dict[str, Any] = {
@@ -41,6 +63,8 @@ def _append_action_log(
         "source": source,
         "status_code": status_code,
     }
+    if error_code:
+        entry["error_code"] = error_code
     if new_assets:
         entry["new_assets"] = new_assets
     with _lock:
@@ -411,6 +435,7 @@ def record_native_interaction_tool(
         float(next_state.get("risk_score", 0.2)),
         source="moto_native",
         status_code=status_code,
+        error_code=_extract_error_code(response_body, status_code),
         new_assets=newly_found or [],
     )
 
