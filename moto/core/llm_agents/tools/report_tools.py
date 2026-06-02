@@ -29,7 +29,8 @@ _MARKDOWN_REPORT_DIR = _REPORT_DIR / "markdown"
 _ARTIFACT_REPORT_DIR = _REPORT_DIR / "artifacts"
 _IDLE_SECONDS = float(os.getenv("MOTO_HONEYPOT_SESSION_TIMEOUT", "300"))
 _REPORT_MODEL = os.getenv("MOTO_LLM_REPORT_MODEL") or None
-_REPORT_MAX_TOKENS = int(os.getenv("MOTO_LLM_REPORT_MAX_TOKENS", "16000"))
+_REPORT_MAX_TOKENS = int(os.getenv("MOTO_LLM_REPORT_MAX_TOKENS", "8000"))
+_REPORT_TIMEOUT = float(os.getenv("MOTO_LLM_REPORT_TIMEOUT", "300.0"))
 
 # 작업(operation) → MITRE ATT&CK 기법 ID 정적 매핑
 # ref: https://attack.mitre.org/matrices/enterprise/cloud/
@@ -219,7 +220,7 @@ def generate_attack_report(session_id: str) -> str:
     report_md, llm_meta = call_gpt_api_with_meta(
         prompt,
         model=_REPORT_MODEL,
-        timeout=120.0,
+        timeout=_REPORT_TIMEOUT,
         max_tokens=_REPORT_MAX_TOKENS,
     )
 
