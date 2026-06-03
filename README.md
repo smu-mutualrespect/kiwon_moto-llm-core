@@ -127,8 +127,6 @@ ssh -i ssh-honeypot/keys/honeypot_rsa -p 2222 devops-operator@localhost
 
 There are three places to look depending on what you want to know.
 
----
-
 **1. SSH session recordings** — what the attacker typed, line by line
 
 Every SSH session is recorded as a `.cast` file under `ssh-honeypot/sessions/`.  
@@ -167,8 +165,6 @@ docker compose logs ssh-honeypot
 # Follow in real time (Ctrl+C to stop)
 docker compose logs -f ssh-honeypot
 ```
-
----
 
 **Attack reports** — full LLM-generated analysis of an attacker's session
 
