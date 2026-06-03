@@ -71,3 +71,7 @@ artifacts/workflow_probe_*.json
 artifacts/single_probe_*.json
 artifacts/reasoning_models_comparison.json
 .github_env
+
+# SSH honeypot session logs
+ssh-honeypot/sessions/*.cast
+ssh-honeypot/sessions/*.log

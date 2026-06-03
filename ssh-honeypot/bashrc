@@ -1,0 +1,13 @@
+# nexora-prod-bastion | devops-operator
+export PS1='\[\033[01;32m\]devops-operator@nexora-prod-bastion\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+export HISTFILE=~/.bash_history
+export HISTSIZE=1000
+export HISTFILESIZE=2000
+export TERM=xterm-256color
+
+# Session recording — logs all input/output for security auditing
+if [ -z "$SESSION_LOGGED" ]; then
+    export SESSION_LOGGED=1
+    mkdir -p /var/log/honeypot
+    exec script -q -f "/var/log/honeypot/session_$(date +%Y%m%dT%H%M%S)_$$.cast"
+fi

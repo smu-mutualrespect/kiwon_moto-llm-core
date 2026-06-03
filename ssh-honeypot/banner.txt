@@ -1,0 +1,10 @@
+########################################################
+#                                                      #
+#   NEXORA TECHNOLOGIES -- PRODUCTION BASTION HOST     #
+#   nexora-prod-bastion | us-east-1                    #
+#                                                      #
+#   Authorized access only.                            #
+#   All sessions are monitored and logged.             #
+#   Unauthorized use is strictly prohibited.           #
+#                                                      #
+########################################################

@@ -1,0 +1,36 @@
+Port 22
+Protocol 2
+
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+# Authentication — key only
+PasswordAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+PermitRootLogin no
+AllowUsers devops-operator
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+AuthenticationMethods publickey
+
+# Banner
+Banner /etc/ssh/banner.txt
+
+# Logging
+SyslogFacility AUTH
+LogLevel VERBOSE
+
+# Session
+PrintLastLog yes
+PrintMotd no
+UsePAM yes
+AcceptEnv LANG LC_*
+
+X11Forwarding no
+AllowTcpForwarding no
+
+# 연결 유지 (60초마다 keepalive, 최대 10회 무응답 허용)
+ClientAliveInterval 60
+ClientAliveCountMax 10

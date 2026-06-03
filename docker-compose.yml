@@ -1,0 +1,35 @@
+services:
+  moto:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    env_file: .env
+    environment:
+      MOTO_HONEYPOT_REPORT_DIR: /reports
+      MOTO_HONEYPOT_SESSION_TIMEOUT: "300"
+      MOTO_HONEYPOT_EXPOSE_INTERNAL_API: "0"
+    volumes:
+      - ./reports:/reports
+    networks:
+      - honeypot-net
+    restart: unless-stopped
+
+  ssh-honeypot:
+    build:
+      context: .
+      dockerfile: ssh-honeypot/Dockerfile
+    ports:
+      - "2222:22"
+    depends_on:
+      - moto
+    volumes:
+      - ./ssh-honeypot/sessions:/var/log/honeypot
+    networks:
+      - honeypot-net
+    restart: unless-stopped
+
+networks:
+  honeypot-net:
+    driver: bridge
