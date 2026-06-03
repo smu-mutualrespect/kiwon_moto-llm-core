@@ -30,7 +30,124 @@ the AWS mock response helpers live in `moto/core/llm_agents/honeypot_aws_mocks.p
 
 ---
 
-## Running the Honeypot Server
+## SSH Honeypot Entry Point (Docker)
+
+PhantomGate provides a fully containerized SSH honeypot entry point.  
+An attacker connects via SSH using a "leaked" private key, lands in a fake Nexora production environment, discovers AWS credentials in `~/.aws/credentials`, and begins probing the cloud infrastructure — all of which is silently routed to the moto honeypot server and recorded.
+
+```
+Attacker
+  │  SSH (port 2222)  ← leaked private key
+  ▼
+SSH Container (Ubuntu 22.04 / devops-operator@nexora-prod-bastion)
+  ├── ~/.aws/credentials   ← honeypot access key
+  ├── ~/deploy.sh, ~/eks/, ~/terraform/, ...  ← fake Nexora filesystem
+  └── aws s3 ls / aws iam list-users / ...
+           │  HTTP (AWS_ENDPOINT_URL=http://moto:5000)
+           ▼
+     moto Honeypot Server
+     + LLM Agent + Session Report
+```
+
+### Prerequisites
+
+- Docker Engine installed and running
+
+### Initial Setup (one-time)
+
+```bash
+# 1. Add moto account to docker group (requires sudo)
+sudo usermod -aG docker moto
+
+# 2. Apply group without re-login
+newgrp docker
+```
+
+### Build
+
+Run inside the `AgentHoneypot` directory:
+
+```bash
+cd /home/moto/AgentHoneypot
+docker compose build
+```
+
+### Run & Stop
+
+```bash
+# Start both moto server and SSH honeypot container
+docker compose up -d
+
+# Stop all containers
+docker compose down
+```
+
+### Test SSH Access
+
+The "leaked" private key is located at `ssh-honeypot/keys/honeypot_rsa`.  
+Run the following command inside the `AgentHoneypot` directory:
+
+```bash
+ssh -i ssh-honeypot/keys/honeypot_rsa -p 2222 devops-operator@localhost
+```
+
+Once connected, the attacker sees the fake Nexora filesystem and can run AWS CLI commands that are transparently routed to the honeypot server:
+
+```bash
+# These commands are answered by the moto honeypot, not real AWS
+aws s3 ls
+aws iam list-users
+aws ec2 describe-instances
+aws eks list-clusters
+aws secretsmanager list-secrets
+```
+
+### Rebuild After Code Changes
+
+When you modify honeypot code, rebuild only the changed service and restart:
+
+```bash
+docker compose down && docker compose build ssh-honeypot && docker compose up -d
+ssh -i ssh-honeypot/keys/honeypot_rsa -p 2222 devops-operator@localhost
+```
+
+> **Note:** The `moto` service picks up Python source changes automatically since it uses an editable install. Rebuild `moto` only if you add new dependencies.
+
+### Monitoring & Logs
+
+**1. SSH session recordings** — every keystroke the attacker types is saved as a `.cast` file:
+
+```bash
+ls ssh-honeypot/sessions/
+cat ssh-honeypot/sessions/*.cast
+```
+
+**2. moto honeypot server log** — AWS API calls, LLM agent activity, report generation:
+
+```bash
+docker logs agenthoneypot-moto-1
+# real-time
+docker logs -f agenthoneypot-moto-1
+```
+
+**3. SSH container log** — connection and authentication records:
+
+```bash
+docker logs agenthoneypot-ssh-honeypot-1
+# real-time
+docker logs -f agenthoneypot-ssh-honeypot-1
+```
+
+**Attack reports** are generated automatically after a session goes idle for 300 seconds (configurable via `MOTO_HONEYPOT_SESSION_TIMEOUT`):
+
+```bash
+ls reports/markdown/    # LLM-generated attack flow analysis
+ls reports/artifacts/   # metrics JSON, STIX bundle, ATT&CK Navigator layer
+```
+
+---
+
+## Running the Honeypot Server (Manual / Development)
 
 First, switch to the user account you created and activate the virtual environment:
 
