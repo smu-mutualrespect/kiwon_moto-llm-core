@@ -142,32 +142,30 @@ ls ssh-honeypot/sessions/
 cat ssh-honeypot/sessions/<session-filename>.cast
 ```
 
----
-
 **2. moto honeypot server log** — AWS API calls, LLM agent responses, report events
 
-This log shows every AWS CLI request the attacker made, which path handled it (moto native or LLM agent), and when a report was generated.
+This log shows every AWS CLI request the attacker made, which path handled it (moto native or LLM agent), and when a report was generated.  
+Run from the repository root:
 
 ```bash
 # Show all logs so far
-docker logs agenthoneypot-moto-1
+docker compose logs moto
 
 # Follow in real time (Ctrl+C to stop)
-docker logs -f agenthoneypot-moto-1
+docker compose logs -f moto
 ```
-
----
 
 **3. SSH container log** — connection and authentication events
 
-Shows who connected, from which IP, and whether authentication succeeded or failed.
+Shows who connected, from which IP, and whether authentication succeeded or failed.  
+Run from the repository root:
 
 ```bash
 # Show all logs so far
-docker logs agenthoneypot-ssh-honeypot-1
+docker compose logs ssh-honeypot
 
 # Follow in real time (Ctrl+C to stop)
-docker logs -f agenthoneypot-ssh-honeypot-1
+docker compose logs -f ssh-honeypot
 ```
 
 ---
