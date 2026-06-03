@@ -55,43 +55,52 @@ SSH Container (Ubuntu 22.04 / devops-operator@nexora-prod-bastion)
 
 ### Initial Setup (one-time)
 
-```bash
-# 1. Add moto account to docker group (requires sudo)
-sudo usermod -aG docker moto
+Docker commands require membership in the `docker` group. Run the following steps once before the first build.
 
-# 2. Apply group without re-login
+> **Note:** Replace `<your-username>` with the OS account you use to run the honeypot (e.g. `moto`).
+
+```bash
+# 1. Add your account to the docker group (requires sudo or root)
+#    This grants permission to run docker commands without sudo.
+sudo usermod -aG docker <your-username>
+
+# 2. Apply the group change in the current terminal without re-logging in
+#    (If you open a new terminal later, this step is not needed again.)
 newgrp docker
 ```
 
 ### Build
 
-Run inside the `AgentHoneypot` directory:
+All `docker compose` commands must be run from the **same directory that contains `docker-compose.yml`** — i.e., the root of this repository (wherever you cloned it).
 
 ```bash
-cd /home/moto/AgentHoneypot
+# Move into the repository root first
+cd <path-to-this-repo>
+
+# Build both the moto server image and the SSH honeypot image
 docker compose build
 ```
 
 ### Run & Stop
 
 ```bash
-# Start both moto server and SSH honeypot container
+# Start both containers in the background
 docker compose up -d
 
-# Stop all containers
+# Stop and remove all containers (data in reports/ and sessions/ is preserved)
 docker compose down
 ```
 
 ### Test SSH Access
 
-The "leaked" private key is located at `ssh-honeypot/keys/honeypot_rsa`.  
-Run the following command inside the `AgentHoneypot` directory:
+The simulated "leaked" private key is at `ssh-honeypot/keys/honeypot_rsa` inside the repository.  
+All commands below must be run from the **repository root** (same directory as `docker-compose.yml`).
 
 ```bash
 ssh -i ssh-honeypot/keys/honeypot_rsa -p 2222 devops-operator@localhost
 ```
 
-Once connected, the attacker sees the fake Nexora filesystem and can run AWS CLI commands that are transparently routed to the honeypot server:
+Once connected, you land in the fake Nexora production environment as `devops-operator`. AWS CLI commands are silently routed to the moto honeypot — no real AWS account is contacted:
 
 ```bash
 # These commands are answered by the moto honeypot, not real AWS
@@ -104,45 +113,76 @@ aws secretsmanager list-secrets
 
 ### Rebuild After Code Changes
 
-When you modify honeypot code, rebuild only the changed service and restart:
+When you modify honeypot source code, rebuild only the affected service and restart.  
+Run from the repository root:
 
 ```bash
 docker compose down && docker compose build ssh-honeypot && docker compose up -d
 ssh -i ssh-honeypot/keys/honeypot_rsa -p 2222 devops-operator@localhost
 ```
 
-> **Note:** The `moto` service picks up Python source changes automatically since it uses an editable install. Rebuild `moto` only if you add new dependencies.
+> **Note:** The `moto` service uses an editable install, so Python source changes are picked up without rebuilding. Rebuild `moto` only when adding new dependencies.
 
 ### Monitoring & Logs
 
-**1. SSH session recordings** — every keystroke the attacker types is saved as a `.cast` file:
+There are three places to look depending on what you want to know.
+
+---
+
+**1. SSH session recordings** — what the attacker typed, line by line
+
+Every SSH session is recorded as a `.cast` file under `ssh-honeypot/sessions/`.  
+The file is created the moment a user connects and grows in real time.
 
 ```bash
+# List recorded sessions
 ls ssh-honeypot/sessions/
-cat ssh-honeypot/sessions/*.cast
+
+# Read the raw text of a session (run from repository root)
+cat ssh-honeypot/sessions/<session-filename>.cast
 ```
 
-**2. moto honeypot server log** — AWS API calls, LLM agent activity, report generation:
+---
+
+**2. moto honeypot server log** — AWS API calls, LLM agent responses, report events
+
+This log shows every AWS CLI request the attacker made, which path handled it (moto native or LLM agent), and when a report was generated.
 
 ```bash
+# Show all logs so far
 docker logs agenthoneypot-moto-1
-# real-time
+
+# Follow in real time (Ctrl+C to stop)
 docker logs -f agenthoneypot-moto-1
 ```
 
-**3. SSH container log** — connection and authentication records:
+---
+
+**3. SSH container log** — connection and authentication events
+
+Shows who connected, from which IP, and whether authentication succeeded or failed.
 
 ```bash
+# Show all logs so far
 docker logs agenthoneypot-ssh-honeypot-1
-# real-time
+
+# Follow in real time (Ctrl+C to stop)
 docker logs -f agenthoneypot-ssh-honeypot-1
 ```
 
-**Attack reports** are generated automatically after a session goes idle for 300 seconds (configurable via `MOTO_HONEYPOT_SESSION_TIMEOUT`):
+---
+
+**Attack reports** — full LLM-generated analysis of an attacker's session
+
+Reports are generated automatically once a session has been idle for 300 seconds (configurable via `MOTO_HONEYPOT_SESSION_TIMEOUT`).  
+Two types of output are saved:
 
 ```bash
-ls reports/markdown/    # LLM-generated attack flow analysis
-ls reports/artifacts/   # metrics JSON, STIX bundle, ATT&CK Navigator layer
+# Markdown narrative report — attack flow, TTP mapping, IOCs, detection recommendations
+ls reports/markdown/
+
+# Structured artifacts — metrics JSON, STIX 2.1 bundle, ATT&CK Navigator layer
+ls reports/artifacts/
 ```
 
 ---
